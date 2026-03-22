@@ -23,6 +23,9 @@ export class Renderer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.body.appendChild(this.renderer.domElement);
 
+    // 모바일 브라우저 기본 터치 제스처 간섭 방지
+    this.renderer.domElement.style.touchAction = "none";
+
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
     this.scene.add(ambientLight);
 
@@ -30,7 +33,6 @@ export class Renderer {
     dirLight.position.set(5, 10, 5);
     this.scene.add(dirLight);
 
-    // ✅ 원형 스테이지
     const stageGeometry = new THREE.CylinderGeometry(
       this.stageRadius,
       this.stageRadius,

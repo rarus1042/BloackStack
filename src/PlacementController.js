@@ -62,9 +62,14 @@ export class PlacementController {
       padding: this.previewClampPadding,
     });
 
+    // 모바일/터치 입력 관리
+    this.activeTouchIds = new Set();
+    this.isTouchCameraGesture = false;
+
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerMove = this.onPointerMove.bind(this);
     this.onPointerUp = this.onPointerUp.bind(this);
+    this.onPointerLeave = this.onPointerUp.bind(this);
 
     this.bindEvents();
   }
@@ -72,10 +77,11 @@ export class PlacementController {
   bindEvents() {
     if (!this.domElement) return;
 
-    this.domElement.addEventListener("pointerdown", this.onPointerDown);
-    this.domElement.addEventListener("pointermove", this.onPointerMove);
-    this.domElement.addEventListener("pointerup", this.onPointerUp);
-    this.domElement.addEventListener("pointercancel", this.onPointerUp);
+    this.domElement.addEventListener("pointerdown", this.onPointerDown, { passive: false });
+    this.domElement.addEventListener("pointermove", this.onPointerMove, { passive: false });
+    this.domElement.addEventListener("pointerup", this.onPointerUp, { passive: false });
+    this.domElement.addEventListener("pointercancel", this.onPointerUp, { passive: false });
+    this.domElement.addEventListener("pointerleave", this.onPointerLeave, { passive: false });
   }
 
   dispose() {
@@ -86,6 +92,7 @@ export class PlacementController {
       this.domElement.removeEventListener("pointermove", this.onPointerMove);
       this.domElement.removeEventListener("pointerup", this.onPointerUp);
       this.domElement.removeEventListener("pointercancel", this.onPointerUp);
+      this.domElement.removeEventListener("pointerleave", this.onPointerLeave);
     }
 
     this.rotateGizmo.dispose();
@@ -135,6 +142,10 @@ export class PlacementController {
     return this.blockSystem?.getCurrentPreviewBlock() ?? null;
   }
 
+  isTouchEvent(event) {
+    return event.pointerType === "touch";
+  }
+
   updatePointer(event) {
     const rect = this.domElement.getBoundingClientRect();
 
@@ -160,6 +171,7 @@ export class PlacementController {
       const block = this.getPreviewBlock();
       if (!block) return;
       if (this.isDragging) return;
+      if (this.isTouchCameraGesture) return;
       if (this.blockSystem.state !== "EDIT") return;
 
       this.blockSystem.enterRotateMode();
@@ -176,6 +188,33 @@ export class PlacementController {
 
   unlockControls() {
     if (this.controls) this.controls.enabled = true;
+  }
+
+  resetInteractionState() {
+    this.clearLongPressTimer();
+    this.isDragging = false;
+    this.isRotating = false;
+    this.activePointerId = null;
+    this.selectedAxis = null;
+    this.moveAxis = null;
+
+    this.rotateGizmo.setActiveAxis(null);
+    this.moveGizmo.setActiveAxis(null);
+  }
+
+  enterTouchCameraGesture() {
+    this.isTouchCameraGesture = true;
+    this.resetInteractionState();
+    this.unlockControls();
+  }
+
+  leaveTouchCameraGestureIfPossible() {
+    if (this.activeTouchIds.size < 2) {
+      this.isTouchCameraGesture = false;
+      if (this.activeTouchIds.size === 0) {
+        this.unlockControls();
+      }
+    }
   }
 
   getAxisWorld(block, axis) {
@@ -305,6 +344,21 @@ export class PlacementController {
     const block = this.getPreviewBlock();
     if (!block) return;
 
+    const isTouch = this.isTouchEvent(event);
+
+    if (isTouch) {
+      this.activeTouchIds.add(event.pointerId);
+
+      if (this.activeTouchIds.size >= 2) {
+        this.enterTouchCameraGesture();
+        return;
+      }
+    }
+
+    if (this.isTouchCameraGesture) {
+      return;
+    }
+
     this.updatePointer(event);
 
     if (this.blockSystem.state === "ROTATE") {
@@ -342,6 +396,8 @@ export class PlacementController {
       const blockHit = this.pickPreviewBlock(event);
       if (blockHit) {
         this.blockSystem.exitRotateMode();
+      } else if (!isTouch) {
+        this.unlockControls();
       }
 
       return;
@@ -386,7 +442,14 @@ export class PlacementController {
     }
 
     const hit = this.pickPreviewBlock(event);
-    if (!hit) return;
+
+    // PC에서는 블럭이 아닌 빈 공간 클릭 시 카메라 허용
+    if (!hit) {
+      if (!isTouch) {
+        this.unlockControls();
+      }
+      return;
+    }
 
     this.activePointerId = event.pointerId;
     this.isDragging = false;
@@ -417,6 +480,17 @@ export class PlacementController {
   }
 
   onPointerMove(event) {
+    const isTouch = this.isTouchEvent(event);
+
+    if (isTouch && this.activeTouchIds.size >= 2) {
+      this.enterTouchCameraGesture();
+      return;
+    }
+
+    if (this.isTouchCameraGesture) {
+      return;
+    }
+
     if (this.activePointerId !== event.pointerId) return;
 
     const block = this.getPreviewBlock();
@@ -482,6 +556,17 @@ export class PlacementController {
   }
 
   onPointerUp(event) {
+    const isTouch = this.isTouchEvent(event);
+
+    if (isTouch) {
+      this.activeTouchIds.delete(event.pointerId);
+      this.leaveTouchCameraGestureIfPossible();
+
+      if (this.isTouchCameraGesture) {
+        return;
+      }
+    }
+
     if (this.activePointerId !== null && this.activePointerId !== event.pointerId) {
       return;
     }
@@ -497,7 +582,9 @@ export class PlacementController {
     this.rotateGizmo.setActiveAxis(null);
     this.moveGizmo.setActiveAxis(null);
 
-    this.unlockControls();
+    if (!isTouch || this.activeTouchIds.size === 0) {
+      this.unlockControls();
+    }
 
     if (this.domElement.releasePointerCapture && event.pointerId !== undefined) {
       try {
