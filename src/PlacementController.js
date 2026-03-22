@@ -23,6 +23,7 @@ export class PlacementController {
     this.activePointerId = null;
     this.isDragging = false;
     this.isRotating = false;
+
     this.selectedAxis = null;
     this.moveAxis = null;
 
@@ -45,6 +46,7 @@ export class PlacementController {
     this.tempScreenB = new THREE.Vector2();
 
     this.longPressTimer = null;
+    this.longPressTriggered = false;
     this.longPressDuration = options.longPressDuration ?? 380;
     this.moveThreshold = options.moveThreshold ?? 8;
     this.rotateSpeed = options.rotateSpeed ?? 0.012;
@@ -62,13 +64,9 @@ export class PlacementController {
       padding: this.previewClampPadding,
     });
 
-    // pointerId -> {
-    //   x, y,
-    //   startedInInteractive,
-    //   startedOnGizmo,
-    //   startedOnGuide,
-    //   startedOnBlock
-    // }
+    // NONE | MOVE | ROTATE
+    this.selectionMode = "NONE";
+
     this.touchPoints = new Map();
     this.isTouchCameraGesture = false;
 
@@ -125,47 +123,42 @@ export class PlacementController {
     const block = this.getPreviewBlock();
 
     if (!block) {
-      this.rotateGizmo.hide();
-      this.moveGizmo.hide();
       this.guide.hide();
-      this.endTouchCameraGesture();
+      this.moveGizmo.hide();
+      this.rotateGizmo.hide();
+      this.clearSelection();
       this.unlockControls();
       return;
     }
 
-    const y = block.mesh.position.y;
-    this.guide.setHeight(y);
+    this.guide.setHeight(block.mesh.position.y);
     this.guide.show();
 
-    if (this.blockSystem?.state === "ROTATE") {
-      this.rotateGizmo.show();
-      this.rotateGizmo.syncToBlock(block);
-      this.rotateGizmo.setActiveAxis(this.selectedAxis);
-
-      this.moveGizmo.hide();
-    } else {
+    if (this.selectionMode === "MOVE") {
       this.moveGizmo.show();
       this.moveGizmo.syncToBlock(block);
       this.moveGizmo.setActiveAxis(this.moveAxis);
 
       this.rotateGizmo.hide();
+      this.selectedAxis = null;
+    } else if (this.selectionMode === "ROTATE") {
+      this.rotateGizmo.show();
+      this.rotateGizmo.syncToBlock(block);
+      this.rotateGizmo.setActiveAxis(this.selectedAxis);
 
-      if (!this.isRotating) {
-        this.selectedAxis = null;
-      }
+      this.moveGizmo.hide();
+      this.moveAxis = null;
+    } else {
+      this.moveGizmo.hide();
+      this.rotateGizmo.hide();
+      this.moveAxis = null;
+      this.selectedAxis = null;
     }
 
     if (this.shouldCameraBeBlocked()) {
       this.lockControls();
     } else {
       this.unlockControls();
-    }
-  }
-
-  clearLongPressTimer() {
-    if (this.longPressTimer) {
-      clearTimeout(this.longPressTimer);
-      this.longPressTimer = null;
     }
   }
 
@@ -190,6 +183,51 @@ export class PlacementController {
     if (this.controls) this.controls.enabled = true;
   }
 
+  clearLongPressTimer() {
+    if (this.longPressTimer) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+    this.longPressTriggered = false;
+  }
+
+  clearSelection() {
+    this.selectionMode = "NONE";
+    this.isDragging = false;
+    this.isRotating = false;
+    this.moveAxis = null;
+    this.selectedAxis = null;
+    this.activePointerId = null;
+    this.moveGizmo.setActiveAxis(null);
+    this.rotateGizmo.setActiveAxis(null);
+  }
+
+  setMoveSelection() {
+    this.selectionMode = "MOVE";
+    this.isDragging = false;
+    this.isRotating = false;
+    this.selectedAxis = null;
+    this.moveAxis = null;
+    this.rotateGizmo.setActiveAxis(null);
+  }
+
+  setRotateSelection() {
+    this.selectionMode = "ROTATE";
+    this.isDragging = false;
+    this.isRotating = false;
+    this.moveAxis = null;
+    this.selectedAxis = null;
+    this.moveGizmo.setActiveAxis(null);
+  }
+
+  shouldCameraBeBlocked() {
+    if (this.selectionMode !== "NONE") return true;
+    if (this.activePointerId !== null) return true;
+    if (this.isDragging) return true;
+    if (this.isRotating) return true;
+    return false;
+  }
+
   updatePointer(event) {
     const rect = this.domElement.getBoundingClientRect();
 
@@ -210,7 +248,7 @@ export class PlacementController {
 
   pickMoveGizmo(event) {
     const block = this.getPreviewBlock();
-    if (!block || this.blockSystem?.state !== "EDIT") return null;
+    if (!block || this.selectionMode !== "MOVE") return null;
 
     this.updatePointer(event);
     this.moveGizmo.syncToBlock(block);
@@ -219,7 +257,7 @@ export class PlacementController {
 
   pickRotateGizmo(event) {
     const block = this.getPreviewBlock();
-    if (!block || this.blockSystem?.state !== "ROTATE") return null;
+    if (!block || this.selectionMode !== "ROTATE") return null;
 
     this.updatePointer(event);
     this.rotateGizmo.syncToBlock(block);
@@ -244,157 +282,17 @@ export class PlacementController {
     return dist <= radius;
   }
 
-  getInteractiveHitInfo(event) {
-    const rotateHit = this.pickRotateGizmo(event);
-    if (rotateHit?.axis) {
-      return {
-        inInteractive: true,
-        onGizmo: true,
-        onGuide: true,
-        onRotateGizmo: true,
-        onMoveGizmo: false,
-        gizmoHit: rotateHit,
-        blockHit: null,
-      };
-    }
-
-    const moveHit = this.pickMoveGizmo(event);
-    if (moveHit?.axis) {
-      return {
-        inInteractive: true,
-        onGizmo: true,
-        onGuide: true,
-        onRotateGizmo: false,
-        onMoveGizmo: true,
-        gizmoHit: moveHit,
-        blockHit: null,
-      };
-    }
-
-    const blockHit = this.pickPreviewBlock(event);
-    if (blockHit) {
-      return {
-        inInteractive: true,
-        onGizmo: false,
-        onGuide: true,
-        onRotateGizmo: false,
-        onMoveGizmo: false,
-        gizmoHit: null,
-        blockHit,
-      };
-    }
-
-    const inGuide = this.isPointerInsideGuide(event);
-    if (inGuide) {
-      return {
-        inInteractive: true,
-        onGizmo: false,
-        onGuide: true,
-        onRotateGizmo: false,
-        onMoveGizmo: false,
-        gizmoHit: null,
-        blockHit: null,
-      };
-    }
-
-    return {
-      inInteractive: false,
-      onGizmo: false,
-      onGuide: false,
-      onRotateGizmo: false,
-      onMoveGizmo: false,
-      gizmoHit: null,
-      blockHit: null,
-    };
-  }
-
-  hasAnyTouchStartedInInteractiveArea() {
-    for (const info of this.touchPoints.values()) {
-      if (info.startedInInteractive) return true;
-    }
-    return false;
-  }
-
-  getActiveTouchCount() {
-    return this.touchPoints.size;
-  }
-
-  hasHighlightedGizmo() {
-    return !!this.selectedAxis || !!this.moveAxis;
-  }
-
-  shouldCameraBeBlocked() {
-    if (this.blockSystem?.state === "ROTATE") return true;
-    if (this.isDragging) return true;
-    if (this.isRotating) return true;
-    if (this.activePointerId !== null) return true;
-    if (this.hasHighlightedGizmo()) return true;
-    if (this.hasAnyTouchStartedInInteractiveArea()) return true;
-    return false;
-  }
-
-  canStartTouchCameraGesture() {
-    if (this.getActiveTouchCount() < 2) return false;
-    if (this.blockSystem?.state === "ROTATE") return false;
-    if (this.hasAnyTouchStartedInInteractiveArea()) return false;
-    if (this.hasHighlightedGizmo()) return false;
-    if (this.activePointerId !== null) return false;
-    if (this.isDragging || this.isRotating) return false;
-    return true;
-  }
-
-  beginTouchCameraGesture() {
-    this.isTouchCameraGesture = true;
-    this.clearLongPressTimer();
-    this.resetInteractiveState();
-    this.unlockControls();
-  }
-
-  endTouchCameraGesture() {
-    this.isTouchCameraGesture = false;
-    if (this.getActiveTouchCount() === 0 && !this.shouldCameraBeBlocked()) {
-      this.unlockControls();
-    }
-  }
-
-  beginLongPressCountdown() {
+  beginBlockLongPressCountdown() {
     this.clearLongPressTimer();
 
     this.longPressTimer = setTimeout(() => {
-      const block = this.getPreviewBlock();
-      if (!block) return;
       if (this.isDragging) return;
-      if (this.isTouchCameraGesture) return;
-      if (this.blockSystem.state !== "EDIT") return;
+      if (this.selectionMode !== "NONE") return;
 
-      this.blockSystem.enterRotateMode();
-      this.selectedAxis = null;
-      this.isRotating = false;
-      this.rotateGizmo.show();
-      this.rotateGizmo.syncToBlock(block);
-
+      this.longPressTriggered = true;
+      this.setRotateSelection();
       this.lockControls();
     }, this.longPressDuration);
-  }
-
-  resetInteractiveState() {
-    this.clearLongPressTimer();
-
-    this.isDragging = false;
-    this.isRotating = false;
-    this.activePointerId = null;
-    this.selectedAxis = null;
-    this.moveAxis = null;
-
-    this.rotateGizmo.setActiveAxis(null);
-    this.moveGizmo.setActiveAxis(null);
-  }
-
-  clearHighlightOnly() {
-    this.selectedAxis = null;
-    this.moveAxis = null;
-    this.rotateGizmo.setActiveAxis(null);
-    this.moveGizmo.setActiveAxis(null);
   }
 
   getAxisWorld(block, axis) {
@@ -511,11 +409,8 @@ export class PlacementController {
     let nextX = this.moveStartBlockPos.x;
     let nextZ = this.moveStartBlockPos.z;
 
-    if (axis === "x") {
-      nextX += worldDelta;
-    } else if (axis === "z") {
-      nextZ += worldDelta;
-    }
+    if (axis === "x") nextX += worldDelta;
+    else if (axis === "z") nextZ += worldDelta;
 
     this.blockSystem.setPreviewPosition(nextX, nextZ);
   }
@@ -524,183 +419,105 @@ export class PlacementController {
     const block = this.getPreviewBlock();
     if (!block) return;
 
-    const isTouch = this.isTouchEvent(event);
-    const hitInfo = this.getInteractiveHitInfo(event);
+    const blockHit = this.pickPreviewBlock(event);
+    const inGuide = this.isPointerInsideGuide(event);
 
-    if (isTouch) {
-      this.touchPoints.set(event.pointerId, {
-        x: event.clientX,
-        y: event.clientY,
-        startedInInteractive: hitInfo.inInteractive,
-        startedOnGizmo: hitInfo.onGizmo,
-        startedOnGuide: hitInfo.onGuide,
-        startedOnBlock: !!hitInfo.blockHit,
-      });
+    this.activePointerId = event.pointerId;
+    this.pointerDownScreen.set(event.clientX, event.clientY);
+    this.lastPointerScreen.set(event.clientX, event.clientY);
 
-      if (this.canStartTouchCameraGesture()) {
-        this.beginTouchCameraGesture();
-        return;
-      }
+    // ROTATE selection
+    if (this.selectionMode === "ROTATE") {
+      const rotateHit = this.pickRotateGizmo(event);
 
-      if (this.getActiveTouchCount() >= 2 && !this.canStartTouchCameraGesture()) {
-        this.lockControls();
-        this.consumeEvent(event);
-        return;
-      }
-    }
-
-    if (this.isTouchCameraGesture) {
-      return;
-    }
-
-    if (this.blockSystem.state === "ROTATE") {
-      this.lockControls();
-
-      if (hitInfo.onRotateGizmo && hitInfo.gizmoHit?.axis) {
-        this.activePointerId = event.pointerId;
-        this.selectedAxis = hitInfo.gizmoHit.axis;
-        this.moveAxis = null;
+      if (rotateHit?.axis) {
+        this.selectedAxis = rotateHit.axis;
         this.isRotating = true;
-        this.isDragging = false;
-
-        this.pointerDownScreen.set(event.clientX, event.clientY);
-        this.lastPointerScreen.set(event.clientX, event.clientY);
-
-        this.updateRotationTangentFromHit(
-          block,
-          hitInfo.gizmoHit.axis,
-          hitInfo.gizmoHit.point
-        );
-
-        this.rotateGizmo.setActiveAxis(hitInfo.gizmoHit.axis);
+        this.updateRotationTangentFromHit(block, rotateHit.axis, rotateHit.point);
 
         if (this.domElement.setPointerCapture) {
           this.domElement.setPointerCapture(event.pointerId);
         }
 
-        this.consumeEvent(event);
-        return;
-      }
-
-      this.selectedAxis = null;
-      this.rotateGizmo.setActiveAxis(null);
-
-      // 회전 모드에서 가이드 밖 터치 시 해제
-      if (!hitInfo.onGuide) {
-        this.blockSystem.exitRotateMode();
-        this.consumeEvent(event);
-        return;
-      }
-
-      // 가이드 안이지만 회전축이 아닌 곳
-      this.consumeEvent(event);
-      return;
-    }
-
-    if (this.blockSystem.state !== "EDIT") return;
-
-    // 1) 무브 기즈모 직접 눌렀을 때만 이동 시작
-    if (hitInfo.onMoveGizmo && hitInfo.gizmoHit?.axis) {
-      this.activePointerId = event.pointerId;
-      this.isDragging = true;
-      this.isRotating = false;
-      this.selectedAxis = null;
-      this.moveAxis = hitInfo.gizmoHit.axis;
-
-      this.pointerDownScreen.set(event.clientX, event.clientY);
-      this.lastPointerScreen.set(event.clientX, event.clientY);
-
-      this.moveGizmo.setActiveAxis(hitInfo.gizmoHit.axis);
-      this.lockControls();
-
-      if (hitInfo.gizmoHit.axis === "x" || hitInfo.gizmoHit.axis === "z") {
-        this.beginAxisMove(block, hitInfo.gizmoHit.axis, event);
-      } else {
-        const pos = block.body.translation();
-        this.dragPlane.set(new THREE.Vector3(0, 1, 0), -pos.y);
-
-        if (this.raycaster.ray.intersectPlane(this.dragPlane, this.hitPoint)) {
-          this.dragOffset.set(pos.x, pos.y, pos.z).sub(this.hitPoint);
-        } else {
-          this.dragOffset.set(0, 0, 0);
-        }
-      }
-
-      if (this.domElement.setPointerCapture) {
-        this.domElement.setPointerCapture(event.pointerId);
-      }
-
-      this.consumeEvent(event);
-      return;
-    }
-
-    // 2) 블럭 본체 클릭 시 이동은 안 하고 롱프레스로 회전만
-    if (hitInfo.blockHit) {
-      this.activePointerId = event.pointerId;
-      this.isDragging = false;
-      this.isRotating = false;
-      this.selectedAxis = null;
-      this.moveAxis = null;
-
-      this.pointerDownScreen.set(event.clientX, event.clientY);
-      this.lastPointerScreen.set(event.clientX, event.clientY);
-
-      this.lockControls();
-
-      if (this.domElement.setPointerCapture) {
-        this.domElement.setPointerCapture(event.pointerId);
-      }
-
-      this.beginLongPressCountdown();
-      this.consumeEvent(event);
-      return;
-    }
-
-    // 3) 가이드 안쪽만 눌렀을 때는 아무것도 이동시키지 않음. 카메라도 금지
-    if (hitInfo.onGuide) {
-      this.clearLongPressTimer();
-      this.activePointerId = null;
-      this.isDragging = false;
-      this.isRotating = false;
-      this.selectedAxis = null;
-      this.moveAxis = null;
-
-      this.lockControls();
-      this.consumeEvent(event);
-      return;
-    }
-
-    // 4) 가이드 밖
-    if (isTouch) {
-      if (this.shouldCameraBeBlocked()) {
         this.lockControls();
         this.consumeEvent(event);
+        return;
       }
+
+      // 가이드 밖 터치 -> 회전 해제
+      if (!inGuide) {
+        this.clearSelection();
+        this.unlockControls();
+        this.consumeEvent(event);
+        return;
+      }
+
+      this.lockControls();
+      this.consumeEvent(event);
       return;
     }
 
-    this.unlockControls();
+    // MOVE selection
+    if (this.selectionMode === "MOVE") {
+      const moveHit = this.pickMoveGizmo(event);
+
+      if (moveHit?.axis) {
+        this.moveAxis = moveHit.axis;
+        this.isDragging = true;
+
+        if (moveHit.axis === "x" || moveHit.axis === "z") {
+          this.beginAxisMove(block, moveHit.axis, event);
+        } else {
+          const pos = block.body.translation();
+          this.dragPlane.set(new THREE.Vector3(0, 1, 0), -pos.y);
+
+          if (this.raycaster.ray.intersectPlane(this.dragPlane, this.hitPoint)) {
+            this.dragOffset.set(pos.x, pos.y, pos.z).sub(this.hitPoint);
+          } else {
+            this.dragOffset.set(0, 0, 0);
+          }
+        }
+
+        if (this.domElement.setPointerCapture) {
+          this.domElement.setPointerCapture(event.pointerId);
+        }
+
+        this.lockControls();
+        this.consumeEvent(event);
+        return;
+      }
+
+      // 가이드 밖 터치 -> 무브 해제
+      if (!inGuide) {
+        this.clearSelection();
+        this.unlockControls();
+        this.consumeEvent(event);
+        return;
+      }
+
+      // 가이드 안 빈 공간은 아무것도 안 함
+      this.lockControls();
+      this.consumeEvent(event);
+      return;
+    }
+
+    // NONE state
+    if (blockHit) {
+      if (this.domElement.setPointerCapture) {
+        this.domElement.setPointerCapture(event.pointerId);
+      }
+
+      this.beginBlockLongPressCountdown();
+      this.lockControls();
+      this.consumeEvent(event);
+      return;
+    }
+
+    // 기본 상태에서 블럭도 아니고 가이드만 눌렀으면 카메라 허용
+    this.activePointerId = null;
   }
 
   onPointerMove(event) {
-    const isTouch = this.isTouchEvent(event);
-
-    if (isTouch && this.touchPoints.has(event.pointerId)) {
-      const info = this.touchPoints.get(event.pointerId);
-      info.x = event.clientX;
-      info.y = event.clientY;
-    }
-
-    if (this.isTouchCameraGesture) {
-      return;
-    }
-
-    if (isTouch && this.getActiveTouchCount() >= 2) {
-      this.lockControls();
-      this.consumeEvent(event);
-      return;
-    }
-
     if (this.activePointerId !== event.pointerId) return;
 
     const block = this.getPreviewBlock();
@@ -709,19 +526,31 @@ export class PlacementController {
     const currentScreen = new THREE.Vector2(event.clientX, event.clientY);
     const dx = event.clientX - this.lastPointerScreen.x;
     const dy = event.clientY - this.lastPointerScreen.y;
+    const downDistance = currentScreen.distanceTo(this.pointerDownScreen);
 
-    this.lockControls();
+    // NONE 상태에서 블럭 롱프레스 대기 중
+    if (this.selectionMode === "NONE") {
+      if (downDistance > this.moveThreshold) {
+        this.clearLongPressTimer();
+      }
 
-    if (this.blockSystem.state === "ROTATE" && this.isRotating && this.selectedAxis) {
+      this.lastPointerScreen.copy(currentScreen);
+      return;
+    }
+
+    // ROTATE state
+    if (this.selectionMode === "ROTATE" && this.isRotating && this.selectedAxis) {
       const delta = this.getRotationDeltaFromScreenMove(dx, dy);
       this.blockSystem.rotatePreviewByAxis(this.selectedAxis, delta);
 
       this.lastPointerScreen.copy(currentScreen);
+      this.lockControls();
       this.consumeEvent(event);
       return;
     }
 
-    if (this.isDragging && this.moveAxis) {
+    // MOVE state
+    if (this.selectionMode === "MOVE" && this.isDragging && this.moveAxis) {
       this.updatePointer(event);
 
       if (this.moveAxis === "plane") {
@@ -735,68 +564,43 @@ export class PlacementController {
       }
 
       this.lastPointerScreen.copy(currentScreen);
-      this.consumeEvent(event);
-      return;
-    }
-
-    // 기즈모 직접 안 잡았으면 일반 드래그로 이동 금지
-    if (this.isDragging && !this.moveAxis) {
-      this.lastPointerScreen.copy(currentScreen);
-      this.consumeEvent(event);
-      return;
-    }
-
-    const downDistance = currentScreen.distanceTo(this.pointerDownScreen);
-
-    if (downDistance > this.moveThreshold) {
-      this.clearLongPressTimer();
-      this.isDragging = true;
-    }
-
-    if (!this.isDragging) {
-      this.lastPointerScreen.copy(currentScreen);
-      this.consumeEvent(event);
-      return;
-    }
-
-    // moveAxis 없는 일반 드래그는 이동 안 함
-    if (!this.moveAxis) {
-      this.lastPointerScreen.copy(currentScreen);
+      this.lockControls();
       this.consumeEvent(event);
       return;
     }
 
     this.lastPointerScreen.copy(currentScreen);
-    this.consumeEvent(event);
   }
 
   onPointerUp(event) {
-    const isTouch = this.isTouchEvent(event);
-
-    if (isTouch) {
-      this.touchPoints.delete(event.pointerId);
-
-      if (this.getActiveTouchCount() < 2) {
-        this.endTouchCameraGesture();
-      }
-    }
-
-    if (this.activePointerId !== null && this.activePointerId !== event.pointerId) {
-      if (isTouch && this.shouldCameraBeBlocked()) {
-        this.lockControls();
-        this.consumeEvent(event);
-      }
-      return;
-    }
+    const wasActivePointer = this.activePointerId === event.pointerId;
 
     this.clearLongPressTimer();
 
+    if (!wasActivePointer) return;
+
+    // NONE 상태에서 블럭 탭 후 떼기 -> MOVE selection
+    if (this.selectionMode === "NONE" && !this.longPressTriggered) {
+      const upDistance = new THREE.Vector2(event.clientX, event.clientY)
+        .distanceTo(this.pointerDownScreen);
+
+      const blockHit = this.pickPreviewBlock(event);
+
+      if (blockHit && upDistance <= this.moveThreshold) {
+        this.setMoveSelection();
+        this.lockControls();
+      } else {
+        this.unlockControls();
+      }
+    }
+
     this.isDragging = false;
     this.isRotating = false;
+    this.moveAxis = null;
+    this.selectedAxis = null;
+    this.moveGizmo.setActiveAxis(null);
+    this.rotateGizmo.setActiveAxis(null);
     this.activePointerId = null;
-
-    // 터치 해제 시 하이라이트 해제
-    this.clearHighlightOnly();
 
     if (this.domElement.releasePointerCapture && event.pointerId !== undefined) {
       try {
@@ -804,20 +608,10 @@ export class PlacementController {
       } catch (_) {}
     }
 
-    if (this.blockSystem?.state === "ROTATE") {
-      this.lockControls();
-      this.consumeEvent(event);
-      return;
-    }
-
-    if (this.shouldCameraBeBlocked()) {
-      this.lockControls();
-      this.consumeEvent(event);
-      return;
-    }
-
-    if (!isTouch || this.getActiveTouchCount() === 0) {
+    if (this.selectionMode === "NONE") {
       this.unlockControls();
+    } else {
+      this.lockControls();
     }
   }
 }
