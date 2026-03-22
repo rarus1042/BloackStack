@@ -12,9 +12,12 @@ export class GizmoController {
 
     this.handles = {};
     this.materials = {};
+    this.axisLines = {};
 
     this.ringRadius = this.blockSize * 0.95;
     this.ringTube = Math.max(0.08, this.blockSize * 0.08);
+
+    this.lockedAxis = null;
 
     this.createHandles();
     this.setActiveAxis(null);
@@ -63,7 +66,10 @@ export class GizmoController {
 
     const line = new THREE.Line(geometry, material);
     line.renderOrder = 999;
+    line.userData.axis = axis;
+
     this.root.add(line);
+    this.axisLines[axis] = line;
   }
 
   createHandles() {
@@ -82,6 +88,7 @@ export class GizmoController {
 
   hide() {
     this.root.visible = false;
+    this.unlockAxis();
     this.setActiveAxis(null);
   }
 
@@ -92,7 +99,7 @@ export class GizmoController {
   }
 
   pickAxis(raycaster) {
-    const objects = Object.values(this.handles);
+    const objects = Object.values(this.handles).filter((obj) => obj.visible !== false);
     const hits = raycaster.intersectObjects(objects, false);
     if (!hits.length) return null;
 
@@ -108,8 +115,42 @@ export class GizmoController {
   setActiveAxis(axis) {
     for (const key of Object.keys(this.materials)) {
       const mat = this.materials[key];
-      mat.opacity = key === axis ? 1.0 : 0.65;
+      const isActive = key === axis;
+
+      if (this.lockedAxis) {
+        mat.opacity = key === this.lockedAxis ? 1.0 : 0.0;
+      } else {
+        mat.opacity = isActive ? 1.0 : 0.65;
+      }
     }
+  }
+
+  lockToAxis(axis) {
+    this.lockedAxis = axis ?? null;
+
+    Object.keys(this.handles).forEach((key) => {
+      this.handles[key].visible = key === axis;
+    });
+
+    Object.keys(this.axisLines).forEach((key) => {
+      this.axisLines[key].visible = key === axis;
+    });
+
+    this.setActiveAxis(axis);
+  }
+
+  unlockAxis() {
+    this.lockedAxis = null;
+
+    Object.keys(this.handles).forEach((key) => {
+      this.handles[key].visible = true;
+    });
+
+    Object.keys(this.axisLines).forEach((key) => {
+      this.axisLines[key].visible = true;
+    });
+
+    this.setActiveAxis(null);
   }
 
   dispose() {

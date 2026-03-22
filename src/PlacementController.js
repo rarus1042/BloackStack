@@ -203,24 +203,28 @@ export class PlacementController {
     this.moveAxis = null;
     this.selectedAxis = null;
     this.activePointerId = null;
+
+    this.rotateGizmo.unlockAxis();
     this.moveGizmo.setActiveAxis(null);
     this.rotateGizmo.setActiveAxis(null);
+    
   }
 
-  setMoveSelection() {
-    if (this.blockSystem?.state === "ROTATE") {
-      this.blockSystem.exitRotateMode();
-    }
-
-    this.selectionMode = "MOVE";
-    this.pressTarget = "NONE";
-    this.isDragging = false;
-    this.isRotating = false;
-    this.selectedAxis = null;
-    this.moveAxis = null;
-    this.rotateGizmo.setActiveAxis(null);
+setMoveSelection() {
+  if (this.blockSystem?.state === "ROTATE") {
+    this.blockSystem.exitRotateMode();
   }
 
+  this.selectionMode = "MOVE";
+  this.pressTarget = "NONE";
+  this.isDragging = false;
+  this.isRotating = false;
+  this.selectedAxis = null;
+  this.moveAxis = null;
+
+  this.rotateGizmo.unlockAxis();
+  this.rotateGizmo.setActiveAxis(null);
+}
   setRotateSelection() {
     if (this.blockSystem?.state === "EDIT") {
       this.blockSystem.enterRotateMode();
@@ -450,7 +454,9 @@ export class PlacementController {
         this.selectedAxis = rotateHit.axis;
         this.isRotating = true;
 
+        this.rotateGizmo.lockToAxis(rotateHit.axis);
         this.updateRotationTangentFromHit(block, rotateHit.axis, rotateHit.point);
+        this.rotateGizmo.syncToBlock(block);
 
         if (this.domElement.setPointerCapture) {
           this.domElement.setPointerCapture(event.pointerId);
@@ -655,12 +661,21 @@ export class PlacementController {
       this.lockControls();
     }
 
+    const previewBlock = this.getPreviewBlock();
+
     this.isDragging = false;
     this.isRotating = false;
     this.moveAxis = null;
     this.selectedAxis = null;
     this.moveGizmo.setActiveAxis(null);
+
+    this.rotateGizmo.unlockAxis();
     this.rotateGizmo.setActiveAxis(null);
+
+    if (previewBlock && this.selectionMode === "ROTATE") {
+      this.rotateGizmo.syncToBlock(previewBlock);
+    }
+
     this.pressTarget = "NONE";
     this.activePointerId = null;
 
