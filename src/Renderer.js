@@ -23,7 +23,6 @@ export class Renderer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.body.appendChild(this.renderer.domElement);
 
-    // 모바일 브라우저 기본 제스처 차단
     this.renderer.domElement.style.touchAction = "none";
     this.renderer.domElement.style.webkitUserSelect = "none";
     this.renderer.domElement.style.userSelect = "none";

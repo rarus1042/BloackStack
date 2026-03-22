@@ -62,9 +62,14 @@ export class PlacementController {
       padding: this.previewClampPadding,
     });
 
-    // pointerId -> { x, y, startedInInteractive, startedOnGizmo, startedOnGuide, startedOnBlock }
+    // pointerId -> {
+    //   x, y,
+    //   startedInInteractive,
+    //   startedOnGizmo,
+    //   startedOnGuide,
+    //   startedOnBlock
+    // }
     this.touchPoints = new Map();
-
     this.isTouchCameraGesture = false;
 
     this.onPointerDown = this.onPointerDown.bind(this);
@@ -306,13 +311,6 @@ export class PlacementController {
   hasAnyTouchStartedInInteractiveArea() {
     for (const info of this.touchPoints.values()) {
       if (info.startedInInteractive) return true;
-    }
-    return false;
-  }
-
-  hasAnyTouchStartedOnGizmo() {
-    for (const info of this.touchPoints.values()) {
-      if (info.startedOnGizmo) return true;
     }
     return false;
   }
@@ -587,21 +585,21 @@ export class PlacementController {
       this.selectedAxis = null;
       this.rotateGizmo.setActiveAxis(null);
 
-      // 요구사항 4:
-      // 회전기즈모 활성 상태에서 가이드 밖 터치 시 회전 해제
+      // 회전 모드에서 가이드 밖 터치 시 해제
       if (!hitInfo.onGuide) {
         this.blockSystem.exitRotateMode();
         this.consumeEvent(event);
         return;
       }
 
-      // 가이드 안이지만 회전축이 아닌 곳 누르면 그냥 카메라 차단
+      // 가이드 안이지만 회전축이 아닌 곳
       this.consumeEvent(event);
       return;
     }
 
     if (this.blockSystem.state !== "EDIT") return;
 
+    // 1) 무브 기즈모 직접 눌렀을 때만 이동 시작
     if (hitInfo.onMoveGizmo && hitInfo.gizmoHit?.axis) {
       this.activePointerId = event.pointerId;
       this.isDragging = true;
@@ -636,8 +634,8 @@ export class PlacementController {
       return;
     }
 
-    // 가이드 안쪽 터치도 카메라가 아니라 오브젝트 조작 우선
-    if (hitInfo.onGuide) {
+    // 2) 블럭 본체 클릭 시 이동은 안 하고 롱프레스로 회전만
+    if (hitInfo.blockHit) {
       this.activePointerId = event.pointerId;
       this.isDragging = false;
       this.isRotating = false;
@@ -653,20 +651,26 @@ export class PlacementController {
         this.domElement.setPointerCapture(event.pointerId);
       }
 
-      const pos = block.body.translation();
-      this.dragPlane.set(new THREE.Vector3(0, 1, 0), -pos.y);
-
-      if (this.raycaster.ray.intersectPlane(this.dragPlane, this.hitPoint)) {
-        this.dragOffset.set(pos.x, pos.y, pos.z).sub(this.hitPoint);
-      } else {
-        this.dragOffset.set(0, 0, 0);
-      }
-
       this.beginLongPressCountdown();
       this.consumeEvent(event);
       return;
     }
 
+    // 3) 가이드 안쪽만 눌렀을 때는 아무것도 이동시키지 않음. 카메라도 금지
+    if (hitInfo.onGuide) {
+      this.clearLongPressTimer();
+      this.activePointerId = null;
+      this.isDragging = false;
+      this.isRotating = false;
+      this.selectedAxis = null;
+      this.moveAxis = null;
+
+      this.lockControls();
+      this.consumeEvent(event);
+      return;
+    }
+
+    // 4) 가이드 밖
     if (isTouch) {
       if (this.shouldCameraBeBlocked()) {
         this.lockControls();
@@ -735,6 +739,13 @@ export class PlacementController {
       return;
     }
 
+    // 기즈모 직접 안 잡았으면 일반 드래그로 이동 금지
+    if (this.isDragging && !this.moveAxis) {
+      this.lastPointerScreen.copy(currentScreen);
+      this.consumeEvent(event);
+      return;
+    }
+
     const downDistance = currentScreen.distanceTo(this.pointerDownScreen);
 
     if (downDistance > this.moveThreshold) {
@@ -748,18 +759,12 @@ export class PlacementController {
       return;
     }
 
-    this.updatePointer(event);
-
-    if (!this.raycaster.ray.intersectPlane(this.dragPlane, this.hitPoint)) {
+    // moveAxis 없는 일반 드래그는 이동 안 함
+    if (!this.moveAxis) {
       this.lastPointerScreen.copy(currentScreen);
       this.consumeEvent(event);
       return;
     }
-
-    const targetX = this.hitPoint.x + this.dragOffset.x;
-    const targetZ = this.hitPoint.z + this.dragOffset.z;
-
-    this.blockSystem.setPreviewPosition(targetX, targetZ);
 
     this.lastPointerScreen.copy(currentScreen);
     this.consumeEvent(event);
@@ -790,6 +795,7 @@ export class PlacementController {
     this.isRotating = false;
     this.activePointerId = null;
 
+    // 터치 해제 시 하이라이트 해제
     this.clearHighlightOnly();
 
     if (this.domElement.releasePointerCapture && event.pointerId !== undefined) {

@@ -57,7 +57,6 @@ export class MoveGizmoController {
       obj.userData.axis = axis;
     });
 
-    // 터치용 히트영역 확대
     const hitGeom = new THREE.CylinderGeometry(0.16, 0.16, 1.2, 12);
     const hitMat = new THREE.MeshBasicMaterial({
       transparent: true,
@@ -94,7 +93,6 @@ export class MoveGizmoController {
     mesh.position.set(0.22, 0.02, 0.22);
     mesh.userData.axis = "plane";
 
-    // plane용 터치 확대
     const hitGeom = new THREE.PlaneGeometry(0.8, 0.8);
     const hitMat = new THREE.MeshBasicMaterial({
       transparent: true,
@@ -140,7 +138,6 @@ export class MoveGizmoController {
 
   pickHandle(raycaster) {
     const objects = [...this.hitMeshes];
-
     const hits = raycaster.intersectObjects(objects, false);
     if (!hits.length) return null;
 
