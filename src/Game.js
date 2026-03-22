@@ -12,6 +12,10 @@ export class Game {
       previewClampPadding: 0.35,
     };
 
+    // 배포 반영 확인용 버전 문자열
+    // 푸시할 때 이 값만 바꿔도 화면에서 바로 확인 가능
+    this.appVersion = "v0.1.4-version-label";
+
     this.renderer = new Renderer(this.config);
     this.physics = new Physics(this.config);
 
@@ -35,6 +39,17 @@ export class Game {
       this.bestHeightLabel.style.color = "white";
       this.bestHeightLabel.style.marginTop = "4px";
       this.heightLabel.parentElement.appendChild(this.bestHeightLabel);
+    }
+
+    this.versionLabel = document.getElementById("versionLabel");
+    if (!this.versionLabel && this.heightLabel?.parentElement) {
+      this.versionLabel = document.createElement("div");
+      this.versionLabel.id = "versionLabel";
+      this.versionLabel.style.color = "rgba(255,255,255,0.7)";
+      this.versionLabel.style.marginTop = "4px";
+      this.versionLabel.style.fontSize = "13px";
+      this.versionLabel.style.letterSpacing = "0.3px";
+      this.heightLabel.parentElement.appendChild(this.versionLabel);
     }
 
     this.animate = this.animate.bind(this);
@@ -71,6 +86,7 @@ export class Game {
     this.updateNicknameUI();
     this.updateHeightUI();
     this.updateBestHeightUI();
+    this.updateVersionUI();
 
     window.addEventListener("resize", this.onResize);
     this.actionButton?.addEventListener("click", this.onActionButtonClick);
@@ -94,6 +110,11 @@ export class Game {
   updateBestHeightUI() {
     if (!this.bestHeightLabel) return;
     this.bestHeightLabel.textContent = `최고 기록: ${this.bestHeight.toFixed(2)}`;
+  }
+
+  updateVersionUI() {
+    if (!this.versionLabel) return;
+    this.versionLabel.textContent = `버전: ${this.appVersion}`;
   }
 
   updateControlButton() {
@@ -179,6 +200,7 @@ export class Game {
     this.updateNicknameUI();
     this.updateHeightUI();
     this.updateBestHeightUI();
+    this.updateVersionUI();
 
     this.isGameOver = false;
 
