@@ -12,6 +12,7 @@ export class BlockSystem {
     this.state = "IDLE";
     this.blocks = [];
     this.currentBlock = null;
+    this.isSpawning = false;
 
     this.stageSize = options.stageSize ?? 5;
     this.blockSize = options.blockSize ?? 1;
@@ -36,7 +37,6 @@ export class BlockSystem {
     this.waitingBlockId = 1;
     this.lastCommittedBlockId = 0;
 
-    // 전체 구조 안정 프레임 누적
     this.structureStableFrames = 0;
     this.structureStableFramesRequired =
       options.structureStableFramesRequired ?? 36;
@@ -47,7 +47,7 @@ export class BlockSystem {
       fallSpeed: this.fallSpeed,
       linearDamping: 2.2,
       angularDamping: 6.5,
-      modelPath: "models/block.glb",
+      modelListPath: "models/model-list.json",
     });
 
     this.monitor = new StructureMonitor({
@@ -68,23 +68,30 @@ export class BlockSystem {
   async createBlock() {
     if (this.currentBlock) return;
     if (this.state === "WAITING") return;
+    if (this.isSpawning) return;
 
-    const spawnY = this.getSpawnHeight();
-    const block = await this.factory.createPreviewBlock(
-      spawnY,
-      this.waitingBlockId++
-    );
+    this.isSpawning = true;
 
-    this.previewX = 0;
-    this.previewY = spawnY;
-    this.previewZ = 0;
-    this.previewQuaternion.identity();
+    try {
+      const spawnY = this.getSpawnHeight();
+      const block = await this.factory.createPreviewBlock(
+        spawnY,
+        this.waitingBlockId++
+      );
 
-    this.currentBlock = block;
-    this.blocks.push(block);
+      this.previewX = 0;
+      this.previewY = spawnY;
+      this.previewZ = 0;
+      this.previewQuaternion.identity();
 
-    this.applyPreviewTransform();
-    this.state = "EDIT";
+      this.currentBlock = block;
+      this.blocks.push(block);
+
+      this.applyPreviewTransform();
+      this.state = "EDIT";
+    } finally {
+      this.isSpawning = false;
+    }
   }
 
   getSpawnHeight() {
@@ -97,29 +104,29 @@ export class BlockSystem {
     return this.currentBlock;
   }
 
-clampPreviewPosition(x, z) {
-  const radius = Math.max(0, this.stageSize / 2 - this.previewClampPadding);
-  const length = Math.hypot(x, z);
+  clampPreviewPosition(x, z) {
+    const radius = Math.max(0, this.stageSize / 2 - this.previewClampPadding);
+    const length = Math.hypot(x, z);
 
-  if (length <= radius || length === 0) {
-    return { x, z };
+    if (length <= radius || length === 0) {
+      return { x, z };
+    }
+
+    const scale = radius / length;
+    return {
+      x: x * scale,
+      z: z * scale,
+    };
   }
 
-  const scale = radius / length;
-  return {
-    x: x * scale,
-    z: z * scale,
-  };
-}
-
-getPreviewRotationQuaternion() {
-  return {
-    x: this.previewQuaternion.x,
-    y: this.previewQuaternion.y,
-    z: this.previewQuaternion.z,
-    w: this.previewQuaternion.w,
-  };
-}
+  getPreviewRotationQuaternion() {
+    return {
+      x: this.previewQuaternion.x,
+      y: this.previewQuaternion.y,
+      z: this.previewQuaternion.z,
+      w: this.previewQuaternion.w,
+    };
+  }
 
   applyPreviewTransform() {
     if (!this.currentBlock || this.currentBlock.state !== "preview") return;
@@ -215,7 +222,6 @@ getPreviewRotationQuaternion() {
 
     this.factory.convertPreviewToDynamic(this.currentBlock);
 
-    // 새 블럭이 실제 낙하를 시작하는 순간 전체 안정 판정 리셋
     this.structureStableFrames = 0;
     this.waitingPlacedCount = this.monitor.getPlacedBlockCount(this.blocks);
 
@@ -234,7 +240,6 @@ getPreviewRotationQuaternion() {
 
     const placedCount = this.monitor.getPlacedBlockCount(this.blocks);
 
-    // WAITING 중 블럭 수가 달라졌으면 안정 누적 초기화
     if (placedCount !== this.waitingPlacedCount) {
       this.waitingPlacedCount = placedCount;
       this.structureStableFrames = 0;
@@ -271,6 +276,8 @@ getPreviewRotationQuaternion() {
   maybeSpawnNextBlock() {
     if (this.state !== "IDLE") return;
     if (this.currentBlock) return;
+    if (this.isSpawning) return;
+
     this.createBlock();
   }
 
@@ -294,6 +301,7 @@ getPreviewRotationQuaternion() {
     this.blocks = [];
     this.currentBlock = null;
     this.state = "IDLE";
+    this.isSpawning = false;
 
     this.liveHeight = 0;
     this.stableHeight = 0;

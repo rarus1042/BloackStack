@@ -12,34 +12,83 @@ export class BlockFactory {
     this.fallSpeed = options.fallSpeed ?? 0.9;
     this.linearDamping = options.linearDamping ?? 2.2;
     this.angularDamping = options.angularDamping ?? 6.5;
-    this.modelPath = options.modelPath ?? "models/block.glb";
+
+    this.modelListPath = options.modelListPath ?? "models/model-list.json";
 
     this.loader = new GLTFLoader();
-    this.baseModel = null;
 
-    this.cachedScale = null;
-    this.cachedCollisionData = null;
+    this.modelPaths = [];
+    this.modelListLoaded = false;
+
+    this.modelCache = new Map();
+    this.scaleCache = new Map();
+    this.collisionCache = new Map();
   }
 
-  async ensureModelLoaded() {
-    if (this.baseModel) return;
-    const gltf = await this.loader.loadAsync(this.modelPath);
-    this.baseModel = gltf.scene;
+  async ensureModelListLoaded() {
+    if (this.modelListLoaded) return;
+
+    const response = await fetch(this.modelListPath, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to load model list: ${this.modelListPath} (${response.status})`
+      );
+    }
+
+    const data = await response.json();
+    const files = Array.isArray(data?.files) ? data.files : [];
+
+    this.modelPaths = files
+      .filter((name) => typeof name === "string" && name.trim().length > 0)
+      .map((name) => `models/${name}`);
+
+    this.modelListLoaded = true;
+
+    if (!this.modelPaths.length) {
+      throw new Error("Model list is empty. Add .glb files to models/ and regenerate model-list.json");
+    }
   }
 
-  getModelScale() {
-    const temp = this.baseModel.clone(true);
+  getRandomModelPath() {
+    if (!this.modelPaths.length) {
+      throw new Error("BlockFactory: modelPaths is empty.");
+    }
+
+    const index = Math.floor(Math.random() * this.modelPaths.length);
+    return this.modelPaths[index];
+  }
+
+  async loadModel(modelPath) {
+    if (this.modelCache.has(modelPath)) {
+      return this.modelCache.get(modelPath);
+    }
+
+    const gltf = await this.loader.loadAsync(modelPath);
+    const scene = gltf.scene;
+    this.modelCache.set(modelPath, scene);
+    return scene;
+  }
+
+  getModelScale(baseModel, modelPath) {
+    if (this.scaleCache.has(modelPath)) {
+      return this.scaleCache.get(modelPath);
+    }
+
+    const temp = baseModel.clone(true);
     const box = new THREE.Box3().setFromObject(temp);
     const size = new THREE.Vector3();
     box.getSize(size);
 
     const maxAxis = Math.max(size.x, size.y, size.z) || 1;
-    return this.blockSize / maxAxis;
+    const scale = this.blockSize / maxAxis;
+
+    this.scaleCache.set(modelPath, scale);
+    return scale;
   }
 
-  createRenderObject(scale) {
+  createRenderObject(baseModel, scale) {
     const wrapper = new THREE.Group();
-    const model = this.baseModel.clone(true);
+    const model = baseModel.clone(true);
 
     model.scale.setScalar(scale);
 
@@ -98,12 +147,12 @@ export class BlockFactory {
     };
   }
 
-  buildCollisionData(scale) {
-    if (this.cachedCollisionData && this.cachedScale === scale) {
-      return this.cachedCollisionData;
+  buildCollisionData(baseModel, modelPath, scale) {
+    if (this.collisionCache.has(modelPath)) {
+      return this.collisionCache.get(modelPath);
     }
 
-    const root = this.baseModel.clone(true);
+    const root = baseModel.clone(true);
     root.scale.setScalar(scale);
 
     const box = new THREE.Box3().setFromObject(root);
@@ -117,14 +166,14 @@ export class BlockFactory {
 
     const data = this.extractGeometryFromScene(root);
 
-    this.cachedScale = scale;
-    this.cachedCollisionData = {
+    const collisionData = {
       vertices: data.vertices,
       indices: data.indices,
       halfHeight: size.y / 2,
     };
 
-    return this.cachedCollisionData;
+    this.collisionCache.set(modelPath, collisionData);
+    return collisionData;
   }
 
   createPreviewBody(spawnY, vertices) {
@@ -184,11 +233,14 @@ export class BlockFactory {
   }
 
   async createPreviewBlock(spawnY, id) {
-    await this.ensureModelLoaded();
+    await this.ensureModelListLoaded();
 
-    const scale = this.getModelScale();
-    const collision = this.buildCollisionData(scale);
-    const mesh = this.createRenderObject(scale);
+    const modelPath = this.getRandomModelPath();
+    const baseModel = await this.loadModel(modelPath);
+
+    const scale = this.getModelScale(baseModel, modelPath);
+    const collision = this.buildCollisionData(baseModel, modelPath, scale);
+    const mesh = this.createRenderObject(baseModel, scale);
     const preview = this.createPreviewBody(spawnY, collision.vertices);
 
     return {
@@ -199,6 +251,7 @@ export class BlockFactory {
       halfHeight: collision.halfHeight,
       state: "preview",
       collision,
+      modelPath,
       contactFrames: 0,
       stableFrames: 0,
       committed: false,
