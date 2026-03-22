@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Block Stack</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="hud">
+    <div id="nicknameLabel">닉네임: -</div>
+    <div id="heightLabel">최대 높이: 0.00</div>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
