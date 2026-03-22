@@ -66,19 +66,20 @@ export class BlockManager {
     return Math.max(this.maxHeight + 4, 5);
   }
 
-  handleClick() {
-    if (!this.currentBlock) return;
+switchAxis() {
+  if (!this.currentBlock) return;
+  if (this.state !== "X") return;
 
-    if (this.state === "X") {
-      this.state = "Z";
-      this.moveTime = 0;
-      return;
-    }
+  this.state = "Z";
+  this.moveTime = 0;
+}
 
-    if (this.state === "Z") {
-      this.dropCurrentBlock();
-    }
-  }
+dropBlock() {
+  if (!this.currentBlock) return;
+  if (this.state !== "Z") return;
+
+  this.dropCurrentBlock();
+}
 
   dropCurrentBlock() {
     const block = this.currentBlock;
