@@ -1,74 +1,121 @@
 import { Renderer } from "./Renderer.js";
 import { Physics } from "./Physics.js";
-import { BlockManager } from "./BlockManager.js";
+import { BlockSystem } from "./BlockSystem.js";
+import { PlacementController } from "./PlacementController.js";
 
 export class Game {
   constructor() {
-    this.renderer = new Renderer("gameCanvas");
-    this.physics = new Physics();
+    this.config = {
+      stageSize: 5,
+      groundHeight: 0.5,
+      blockSize: 1,
+      previewClampPadding: 0.35,
+    };
 
-    this.blockManager = new BlockManager(
-      this.renderer.scene,
-      this.physics.world,
-      () => this.handleFail()
-    );
+    this.renderer = new Renderer(this.config);
+    this.physics = new Physics(this.config);
 
-    this.nickname = "";
+    this.blockSystem = null;
+    this.placementController = null;
+
+    this.nickname = "Player";
+    this.bestHeight = 0;
     this.lastTime = 0;
     this.isGameOver = false;
+    this.isRestarting = false;
 
     this.nicknameLabel = document.getElementById("nicknameLabel");
     this.heightLabel = document.getElementById("heightLabel");
     this.actionButton = document.getElementById("actionButton");
+
+    this.bestHeightLabel = document.getElementById("bestHeightLabel");
+    if (!this.bestHeightLabel && this.heightLabel?.parentElement) {
+      this.bestHeightLabel = document.createElement("div");
+      this.bestHeightLabel.id = "bestHeightLabel";
+      this.bestHeightLabel.style.color = "white";
+      this.bestHeightLabel.style.marginTop = "4px";
+      this.heightLabel.parentElement.appendChild(this.bestHeightLabel);
+    }
 
     this.animate = this.animate.bind(this);
     this.onResize = this.onResize.bind(this);
     this.onActionButtonClick = this.onActionButtonClick.bind(this);
   }
 
-  start() {
-    this.nickname = "Player";
+  async start() {
+    await this.physics.init();
+
+    this.blockSystem = new BlockSystem(
+      this.renderer.scene,
+      this.physics,
+      () => this.handleFail(),
+      this.config
+    );
+
+    await this.blockSystem.createBlock();
+
+    this.placementController = new PlacementController({
+      scene: this.renderer.scene,
+      camera: this.renderer.camera,
+      domElement: this.renderer.renderer.domElement,
+      controls: this.renderer.controls,
+      blockSystem: this.blockSystem,
+      blockSize: this.config.blockSize,
+      stageSize: this.config.stageSize,
+      previewClampPadding: this.config.previewClampPadding,
+      longPressDuration: 380,
+      moveThreshold: 8,
+      rotateSpeed: 0.012,
+    });
 
     this.updateNicknameUI();
     this.updateHeightUI();
-
-    this.blockManager.createBlock();
+    this.updateBestHeightUI();
 
     window.addEventListener("resize", this.onResize);
-    this.actionButton.addEventListener("click", this.onActionButtonClick);
+    this.actionButton?.addEventListener("click", this.onActionButtonClick);
 
     this.updateControlButton();
     this.animate(0);
   }
 
-  requestNickname() {
-    let name = prompt("닉네임을 입력하세요", this.nickname || "");
-    if (!name || !name.trim()) {
-      name = "Player";
-    }
-    this.nickname = name.trim();
-  }
-
   updateNicknameUI() {
-    this.nicknameLabel.textContent = `닉네임: ${this.nickname}`;
+    if (this.nicknameLabel) {
+      this.nicknameLabel.textContent = `닉네임: ${this.nickname}`;
+    }
   }
 
   updateHeightUI() {
-    const height = this.blockManager.getMaxHeight();
-    this.heightLabel.textContent = `최대 높이: ${height.toFixed(2)}`;
+    if (!this.heightLabel || !this.blockSystem) return;
+    const height = this.blockSystem.getStableHeight();
+    this.heightLabel.textContent = `현재 높이: ${height.toFixed(2)}`;
+  }
+
+  updateBestHeightUI() {
+    if (!this.bestHeightLabel) return;
+    this.bestHeightLabel.textContent = `최고 기록: ${this.bestHeight.toFixed(2)}`;
   }
 
   updateControlButton() {
-    const state = this.blockManager.state;
+    if (!this.actionButton || !this.blockSystem) return;
 
-    if (state === "X") {
+    if (this.isGameOver || this.isRestarting) {
+      this.actionButton.disabled = true;
+      this.actionButton.textContent = "대기중";
+      this.actionButton.style.opacity = "0.5";
+      return;
+    }
+
+    const state = this.blockSystem.state;
+
+    if (state === "EDIT" || state === "ROTATE") {
       this.actionButton.disabled = false;
-      this.actionButton.textContent = "축 전환";
+      this.actionButton.textContent = "배치";
       this.actionButton.style.opacity = "1";
-    } else if (state === "Z") {
-      this.actionButton.disabled = false;
-      this.actionButton.textContent = "착지";
-      this.actionButton.style.opacity = "1";
+    } else if (state === "WAITING") {
+      this.actionButton.disabled = true;
+      this.actionButton.textContent = "안정화 중";
+      this.actionButton.style.opacity = "0.5";
     } else {
       this.actionButton.disabled = true;
       this.actionButton.textContent = "대기중";
@@ -77,34 +124,39 @@ export class Game {
   }
 
   onActionButtonClick() {
-    if (this.isGameOver) return;
+    if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
 
-    const state = this.blockManager.state;
-
-    if (state === "X") {
-      this.blockManager.switchAxis();
-    } else if (state === "Z") {
-      this.blockManager.dropBlock();
+    if (this.blockSystem.state === "EDIT" || this.blockSystem.state === "ROTATE") {
+      this.blockSystem.confirmCurrentBlock();
     }
 
     this.updateControlButton();
   }
 
   onResize() {
-    this.renderer.resize(window.innerWidth, window.innerHeight);
+    if (this.renderer.resize) {
+      this.renderer.resize(window.innerWidth, window.innerHeight);
+    }
   }
 
-  handleFail() {
-    if (this.isGameOver) return;
+  async handleFail() {
+    if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
 
     this.isGameOver = true;
+    this.updateControlButton();
 
-    setTimeout(() => {
-      const height = this.blockManager.getMaxHeight().toFixed(2);
+    setTimeout(async () => {
+      const height = this.blockSystem.getStableHeight();
+
+      if (height > this.bestHeight) {
+        this.bestHeight = height;
+      }
+
+      this.updateBestHeightUI();
 
       let name = prompt(
-        `실패!\n현재 기록: ${height}\n닉네임 입력:`,
-        this.nickname
+        `실패!\n현재 기록: ${height.toFixed(2)}\n최고 기록: ${this.bestHeight.toFixed(2)}\n닉네임 입력:`,
+        this.nickname || "Player"
       );
 
       if (!name || !name.trim()) {
@@ -112,35 +164,54 @@ export class Game {
       }
 
       this.nickname = name.trim();
-      this.restartGame();
+      await this.restartGame();
     }, 100);
   }
 
-  restartGame() {
-    this.blockManager.reset();
+  async restartGame() {
+    if (this.isRestarting || !this.blockSystem) return;
+
+    this.isRestarting = true;
+
+    this.blockSystem.reset();
+    this.renderer.resetCamera();
 
     this.updateNicknameUI();
     this.updateHeightUI();
+    this.updateBestHeightUI();
 
     this.isGameOver = false;
-    this.blockManager.createBlock();
+
+    await this.blockSystem.createBlock();
+
+    this.isRestarting = false;
     this.updateControlButton();
   }
 
   animate(time) {
     requestAnimationFrame(this.animate);
 
-    const deltaTime = (time - this.lastTime) / 1000 || 0;
     this.lastTime = time;
 
-    if (!this.isGameOver) {
+    if (!this.isGameOver && !this.isRestarting && this.blockSystem) {
       this.physics.step();
-      this.blockManager.update(deltaTime);
+      this.blockSystem.update();
+
+      const cameraHeight = this.blockSystem.getStableHeight();
+      this.renderer.updateCamera(cameraHeight);
+
       this.updateHeightUI();
       this.updateControlButton();
     }
 
-    this.renderer.update();
+    if (this.placementController) {
+      this.placementController.update();
+    }
+
+    if (this.renderer.update) {
+      this.renderer.update();
+    }
+
     this.renderer.render();
   }
 }
