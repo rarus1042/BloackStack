@@ -62,9 +62,12 @@ export class PlacementController {
       padding: this.previewClampPadding,
     });
 
-    // 모바일/터치 입력 관리
+    // 모바일/터치 입력 상태
     this.activeTouchIds = new Set();
     this.isTouchCameraGesture = false;
+
+    // 카메라 잠금 상태
+    this.cameraLockedByPlacement = false;
 
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerMove = this.onPointerMove.bind(this);
@@ -77,22 +80,38 @@ export class PlacementController {
   bindEvents() {
     if (!this.domElement) return;
 
-    this.domElement.addEventListener("pointerdown", this.onPointerDown, { passive: false });
-    this.domElement.addEventListener("pointermove", this.onPointerMove, { passive: false });
-    this.domElement.addEventListener("pointerup", this.onPointerUp, { passive: false });
-    this.domElement.addEventListener("pointercancel", this.onPointerUp, { passive: false });
-    this.domElement.addEventListener("pointerleave", this.onPointerLeave, { passive: false });
+    // capture 단계에서 먼저 가로채서 OrbitControls보다 우선 처리
+    this.domElement.addEventListener("pointerdown", this.onPointerDown, {
+      passive: false,
+      capture: true,
+    });
+    this.domElement.addEventListener("pointermove", this.onPointerMove, {
+      passive: false,
+      capture: true,
+    });
+    this.domElement.addEventListener("pointerup", this.onPointerUp, {
+      passive: false,
+      capture: true,
+    });
+    this.domElement.addEventListener("pointercancel", this.onPointerUp, {
+      passive: false,
+      capture: true,
+    });
+    this.domElement.addEventListener("pointerleave", this.onPointerLeave, {
+      passive: false,
+      capture: true,
+    });
   }
 
   dispose() {
     this.clearLongPressTimer();
 
     if (this.domElement) {
-      this.domElement.removeEventListener("pointerdown", this.onPointerDown);
-      this.domElement.removeEventListener("pointermove", this.onPointerMove);
-      this.domElement.removeEventListener("pointerup", this.onPointerUp);
-      this.domElement.removeEventListener("pointercancel", this.onPointerUp);
-      this.domElement.removeEventListener("pointerleave", this.onPointerLeave);
+      this.domElement.removeEventListener("pointerdown", this.onPointerDown, true);
+      this.domElement.removeEventListener("pointermove", this.onPointerMove, true);
+      this.domElement.removeEventListener("pointerup", this.onPointerUp, true);
+      this.domElement.removeEventListener("pointercancel", this.onPointerUp, true);
+      this.domElement.removeEventListener("pointerleave", this.onPointerLeave, true);
     }
 
     this.rotateGizmo.dispose();
@@ -107,6 +126,7 @@ export class PlacementController {
       this.rotateGizmo.hide();
       this.moveGizmo.hide();
       this.guide.hide();
+      this.releaseCameraLock();
       return;
     }
 
@@ -115,6 +135,9 @@ export class PlacementController {
     this.guide.show();
 
     if (this.blockSystem?.state === "ROTATE") {
+      // 회전 모드에서는 카메라 기본 잠금
+      this.acquireCameraLock();
+
       this.rotateGizmo.show();
       this.rotateGizmo.syncToBlock(block);
       this.rotateGizmo.setActiveAxis(this.selectedAxis);
@@ -128,6 +151,11 @@ export class PlacementController {
       this.rotateGizmo.hide();
       this.selectedAxis = null;
       this.isRotating = false;
+
+      // 편집 중이지만 실제 드래그가 아닐 때는 카메라 잠금 유지하지 않음
+      if (!this.isDragging && !this.isTouchCameraGesture) {
+        this.releaseCameraLock();
+      }
     }
   }
 
@@ -144,6 +172,28 @@ export class PlacementController {
 
   isTouchEvent(event) {
     return event.pointerType === "touch";
+  }
+
+  acquireCameraLock() {
+    this.cameraLockedByPlacement = true;
+    if (this.controls) {
+      this.controls.enabled = false;
+    }
+  }
+
+  releaseCameraLock() {
+    if (this.isTouchCameraGesture) return;
+    if (this.blockSystem?.state === "ROTATE") return;
+
+    this.cameraLockedByPlacement = false;
+    if (this.controls) {
+      this.controls.enabled = true;
+    }
+  }
+
+  consumeEvent(event) {
+    event.preventDefault();
+    event.stopPropagation();
   }
 
   updatePointer(event) {
@@ -179,19 +229,15 @@ export class PlacementController {
       this.isRotating = false;
       this.rotateGizmo.show();
       this.rotateGizmo.syncToBlock(block);
+
+      // 회전 모드 진입 시 카메라 즉시 잠금
+      this.acquireCameraLock();
     }, this.longPressDuration);
-  }
-
-  lockControls() {
-    if (this.controls) this.controls.enabled = false;
-  }
-
-  unlockControls() {
-    if (this.controls) this.controls.enabled = true;
   }
 
   resetInteractionState() {
     this.clearLongPressTimer();
+
     this.isDragging = false;
     this.isRotating = false;
     this.activePointerId = null;
@@ -205,14 +251,27 @@ export class PlacementController {
   enterTouchCameraGesture() {
     this.isTouchCameraGesture = true;
     this.resetInteractionState();
-    this.unlockControls();
+
+    // 회전 모드일 때는 2손가락이라도 카메라 전환 금지
+    if (this.blockSystem?.state === "ROTATE") {
+      this.acquireCameraLock();
+      return;
+    }
+
+    this.cameraLockedByPlacement = false;
+    if (this.controls) {
+      this.controls.enabled = true;
+    }
   }
 
   leaveTouchCameraGestureIfPossible() {
     if (this.activeTouchIds.size < 2) {
       this.isTouchCameraGesture = false;
-      if (this.activeTouchIds.size === 0) {
-        this.unlockControls();
+
+      if (this.blockSystem?.state === "ROTATE") {
+        this.acquireCameraLock();
+      } else if (this.activeTouchIds.size === 0) {
+        this.releaseCameraLock();
       }
     }
   }
@@ -361,7 +420,9 @@ export class PlacementController {
 
     this.updatePointer(event);
 
+    // ROTATE 모드에서는 카메라 완전 잠금
     if (this.blockSystem.state === "ROTATE") {
+      this.acquireCameraLock();
       this.rotateGizmo.syncToBlock(block);
 
       const hit = this.rotateGizmo.pickAxis(this.raycaster);
@@ -377,29 +438,32 @@ export class PlacementController {
         this.lastPointerScreen.set(event.clientX, event.clientY);
 
         this.updateRotationTangentFromHit(block, hit.axis, hit.point);
-
         this.rotateGizmo.setActiveAxis(hit.axis);
-        this.lockControls();
 
         if (this.domElement.setPointerCapture) {
           this.domElement.setPointerCapture(event.pointerId);
         }
 
-        event.preventDefault();
+        this.consumeEvent(event);
         return;
       }
+
+      // 회전 모드에서 빈 곳 누르면 카메라가 아니라 회전모드 해제만 수행
+      const blockHit = this.pickPreviewBlock(event);
 
       this.selectedAxis = null;
       this.isRotating = false;
       this.rotateGizmo.setActiveAxis(null);
 
-      const blockHit = this.pickPreviewBlock(event);
       if (blockHit) {
         this.blockSystem.exitRotateMode();
-      } else if (!isTouch) {
-        this.unlockControls();
+        this.releaseCameraLock();
+        this.consumeEvent(event);
+        return;
       }
 
+      // 회전 모드에서는 빈 공간 클릭도 카메라 전달 금지
+      this.consumeEvent(event);
       return;
     }
 
@@ -418,7 +482,8 @@ export class PlacementController {
       this.pointerDownScreen.set(event.clientX, event.clientY);
       this.lastPointerScreen.set(event.clientX, event.clientY);
 
-      this.lockControls();
+      // 기즈모 잡는 순간 카메라 즉시 잠금
+      this.acquireCameraLock();
 
       if (moveHit.axis === "x" || moveHit.axis === "z") {
         this.beginAxisMove(block, moveHit.axis, event);
@@ -437,16 +502,16 @@ export class PlacementController {
         this.domElement.setPointerCapture(event.pointerId);
       }
 
-      event.preventDefault();
+      this.consumeEvent(event);
       return;
     }
 
     const hit = this.pickPreviewBlock(event);
 
-    // PC에서는 블럭이 아닌 빈 공간 클릭 시 카메라 허용
+    // PC에서 블럭이 아닌 빈 공간 클릭은 카메라 허용
     if (!hit) {
       if (!isTouch) {
-        this.unlockControls();
+        this.releaseCameraLock();
       }
       return;
     }
@@ -460,7 +525,7 @@ export class PlacementController {
     this.pointerDownScreen.set(event.clientX, event.clientY);
     this.lastPointerScreen.set(event.clientX, event.clientY);
 
-    this.lockControls();
+    this.acquireCameraLock();
 
     if (this.domElement.setPointerCapture) {
       this.domElement.setPointerCapture(event.pointerId);
@@ -476,7 +541,7 @@ export class PlacementController {
     }
 
     this.beginLongPressCountdown();
-    event.preventDefault();
+    this.consumeEvent(event);
   }
 
   onPointerMove(event) {
@@ -500,12 +565,15 @@ export class PlacementController {
     const dx = event.clientX - this.lastPointerScreen.x;
     const dy = event.clientY - this.lastPointerScreen.y;
 
+    // 조작 중이면 카메라 계속 잠금 유지
+    this.acquireCameraLock();
+
     if (this.blockSystem.state === "ROTATE" && this.isRotating && this.selectedAxis) {
       const delta = this.getRotationDeltaFromScreenMove(dx, dy);
       this.blockSystem.rotatePreviewByAxis(this.selectedAxis, delta);
 
       this.lastPointerScreen.copy(currentScreen);
-      event.preventDefault();
+      this.consumeEvent(event);
       return;
     }
 
@@ -523,7 +591,7 @@ export class PlacementController {
       }
 
       this.lastPointerScreen.copy(currentScreen);
-      event.preventDefault();
+      this.consumeEvent(event);
       return;
     }
 
@@ -536,6 +604,7 @@ export class PlacementController {
 
     if (!this.isDragging) {
       this.lastPointerScreen.copy(currentScreen);
+      this.consumeEvent(event);
       return;
     }
 
@@ -543,6 +612,7 @@ export class PlacementController {
 
     if (!this.raycaster.ray.intersectPlane(this.dragPlane, this.hitPoint)) {
       this.lastPointerScreen.copy(currentScreen);
+      this.consumeEvent(event);
       return;
     }
 
@@ -552,7 +622,7 @@ export class PlacementController {
     this.blockSystem.setPreviewPosition(targetX, targetZ);
 
     this.lastPointerScreen.copy(currentScreen);
-    event.preventDefault();
+    this.consumeEvent(event);
   }
 
   onPointerUp(event) {
@@ -582,14 +652,24 @@ export class PlacementController {
     this.rotateGizmo.setActiveAxis(null);
     this.moveGizmo.setActiveAxis(null);
 
-    if (!isTouch || this.activeTouchIds.size === 0) {
-      this.unlockControls();
-    }
-
     if (this.domElement.releasePointerCapture && event.pointerId !== undefined) {
       try {
         this.domElement.releasePointerCapture(event.pointerId);
       } catch (_) {}
     }
+
+    // ROTATE 모드면 계속 카메라 잠금 유지
+    if (this.blockSystem?.state === "ROTATE") {
+      this.acquireCameraLock();
+      this.consumeEvent(event);
+      return;
+    }
+
+    // 터치가 모두 끝났거나 PC 조작 종료면 잠금 해제
+    if (!isTouch || this.activeTouchIds.size === 0) {
+      this.releaseCameraLock();
+    }
+
+    this.consumeEvent(event);
   }
 }
