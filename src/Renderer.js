@@ -23,8 +23,28 @@ export class Renderer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.body.appendChild(this.renderer.domElement);
 
-    // 모바일 브라우저 기본 터치 제스처 간섭 방지
+    // 모바일 브라우저 기본 제스처 차단
     this.renderer.domElement.style.touchAction = "none";
+    this.renderer.domElement.style.webkitUserSelect = "none";
+    this.renderer.domElement.style.userSelect = "none";
+    this.renderer.domElement.style.webkitTapHighlightColor = "transparent";
+
+    document.documentElement.style.overscrollBehavior = "none";
+    document.body.style.overscrollBehavior = "none";
+    document.documentElement.style.margin = "0";
+    document.body.style.margin = "0";
+    document.documentElement.style.height = "100%";
+    document.body.style.height = "100%";
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+
+    const preventTouchDefault = (e) => {
+      e.preventDefault();
+    };
+
+    this.renderer.domElement.addEventListener("touchstart", preventTouchDefault, { passive: false });
+    this.renderer.domElement.addEventListener("touchmove", preventTouchDefault, { passive: false });
+    this.renderer.domElement.addEventListener("touchend", preventTouchDefault, { passive: false });
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
     this.scene.add(ambientLight);

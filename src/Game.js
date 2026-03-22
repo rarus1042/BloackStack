@@ -14,7 +14,7 @@ export class Game {
 
     // 배포 반영 확인용 버전 문자열
     // 푸시할 때 이 값만 바꿔도 화면에서 바로 확인 가능
-    this.appVersion = "v0.1.5-version-label";
+    this.appVersion = "v0.1.6-version-label";
 
     this.renderer = new Renderer(this.config);
     this.physics = new Physics(this.config);

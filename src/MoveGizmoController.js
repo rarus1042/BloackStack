@@ -10,20 +10,21 @@ export class MoveGizmoController {
     this.root.renderOrder = 998;
     this.scene.add(this.root);
 
-        this.handles = {};
-        this.materials = {};
+    this.handles = {};
+    this.materials = {};
+    this.hitMeshes = [];
 
-        this.moveAxisScreenDir = new THREE.Vector2(1, 0);
-        this.moveStartPointerScreen = new THREE.Vector2();
-        this.moveStartBlockPos = new THREE.Vector3();
-        this.movePixelsToWorld = options.movePixelsToWorld ?? 0.01;
+    this.moveAxisScreenDir = new THREE.Vector2(1, 0);
+    this.moveStartPointerScreen = new THREE.Vector2();
+    this.moveStartBlockPos = new THREE.Vector3();
+    this.movePixelsToWorld = options.movePixelsToWorld ?? 0.01;
 
-        this.tempScreenA = new THREE.Vector2();
-        this.tempScreenB = new THREE.Vector2();
+    this.tempScreenA = new THREE.Vector2();
+    this.tempScreenB = new THREE.Vector2();
 
-        this.createHandles();
-        this.setActiveAxis(null);
-    }
+    this.createHandles();
+    this.setActiveAxis(null);
+  }
 
   createArrow(axis, color) {
     const group = new THREE.Group();
@@ -56,6 +57,22 @@ export class MoveGizmoController {
       obj.userData.axis = axis;
     });
 
+    // 터치용 히트영역 확대
+    const hitGeom = new THREE.CylinderGeometry(0.16, 0.16, 1.2, 12);
+    const hitMat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0.001,
+      depthTest: false,
+      depthWrite: false,
+    });
+
+    const hitMesh = new THREE.Mesh(hitGeom, hitMat);
+    hitMesh.position.y = 0.5;
+    hitMesh.userData.axis = axis;
+
+    group.add(hitMesh);
+    this.hitMeshes.push(hitMesh);
+
     this.root.add(group);
     this.handles[axis] = group;
     this.materials[axis] = mat;
@@ -77,9 +94,27 @@ export class MoveGizmoController {
     mesh.position.set(0.22, 0.02, 0.22);
     mesh.userData.axis = "plane";
 
+    // plane용 터치 확대
+    const hitGeom = new THREE.PlaneGeometry(0.8, 0.8);
+    const hitMat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0.001,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    });
+
+    const hitMesh = new THREE.Mesh(hitGeom, hitMat);
+    hitMesh.rotation.x = -Math.PI / 2;
+    hitMesh.position.set(0.22, 0.021, 0.22);
+    hitMesh.userData.axis = "plane";
+
     this.root.add(mesh);
+    this.root.add(hitMesh);
+
     this.handles.plane = mesh;
     this.materials.plane = mat;
+    this.hitMeshes.push(hitMesh);
   }
 
   createHandles() {
@@ -104,13 +139,7 @@ export class MoveGizmoController {
   }
 
   pickHandle(raycaster) {
-    const objects = [];
-    Object.values(this.handles).forEach((obj) => {
-      obj.traverse?.((child) => {
-        if (child.isMesh) objects.push(child);
-      });
-      if (obj.isMesh) objects.push(obj);
-    });
+    const objects = [...this.hitMeshes];
 
     const hits = raycaster.intersectObjects(objects, false);
     if (!hits.length) return null;

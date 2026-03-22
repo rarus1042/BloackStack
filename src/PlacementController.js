@@ -62,14 +62,9 @@ export class PlacementController {
       padding: this.previewClampPadding,
     });
 
-    // 모바일 터치 상태
-    // pointerId -> {
-    //   x, y,
-    //   startedInInteractive,
-    //   startedOnGizmo,
-    //   startedOnBlock
-    // }
+    // pointerId -> { x, y, startedInInteractive, startedOnGizmo, startedOnGuide, startedOnBlock }
     this.touchPoints = new Map();
+
     this.isTouchCameraGesture = false;
 
     this.onPointerDown = this.onPointerDown.bind(this);
@@ -83,7 +78,6 @@ export class PlacementController {
   bindEvents() {
     if (!this.domElement) return;
 
-    // OrbitControls보다 먼저 처리
     this.domElement.addEventListener("pointerdown", this.onPointerDown, {
       passive: false,
       capture: true,
@@ -227,12 +221,31 @@ export class PlacementController {
     return this.rotateGizmo.pickAxis(this.raycaster);
   }
 
+  isPointerInsideGuide(event) {
+    const block = this.getPreviewBlock();
+    if (!block) return false;
+
+    this.updatePointer(event);
+
+    const planeY = block.mesh.position.y;
+    this.dragPlane.set(new THREE.Vector3(0, 1, 0), -planeY);
+
+    if (!this.raycaster.ray.intersectPlane(this.dragPlane, this.hitPoint)) {
+      return false;
+    }
+
+    const radius = Math.max(0, this.stageSize / 2 - this.previewClampPadding);
+    const dist = Math.hypot(this.hitPoint.x, this.hitPoint.z);
+    return dist <= radius;
+  }
+
   getInteractiveHitInfo(event) {
     const rotateHit = this.pickRotateGizmo(event);
     if (rotateHit?.axis) {
       return {
         inInteractive: true,
         onGizmo: true,
+        onGuide: true,
         onRotateGizmo: true,
         onMoveGizmo: false,
         gizmoHit: rotateHit,
@@ -245,6 +258,7 @@ export class PlacementController {
       return {
         inInteractive: true,
         onGizmo: true,
+        onGuide: true,
         onRotateGizmo: false,
         onMoveGizmo: true,
         gizmoHit: moveHit,
@@ -257,6 +271,7 @@ export class PlacementController {
       return {
         inInteractive: true,
         onGizmo: false,
+        onGuide: true,
         onRotateGizmo: false,
         onMoveGizmo: false,
         gizmoHit: null,
@@ -264,9 +279,23 @@ export class PlacementController {
       };
     }
 
+    const inGuide = this.isPointerInsideGuide(event);
+    if (inGuide) {
+      return {
+        inInteractive: true,
+        onGizmo: false,
+        onGuide: true,
+        onRotateGizmo: false,
+        onMoveGizmo: false,
+        gizmoHit: null,
+        blockHit: null,
+      };
+    }
+
     return {
       inInteractive: false,
       onGizmo: false,
+      onGuide: false,
       onRotateGizmo: false,
       onMoveGizmo: false,
       gizmoHit: null,
@@ -506,6 +535,7 @@ export class PlacementController {
         y: event.clientY,
         startedInInteractive: hitInfo.inInteractive,
         startedOnGizmo: hitInfo.onGizmo,
+        startedOnGuide: hitInfo.onGuide,
         startedOnBlock: !!hitInfo.blockHit,
       });
 
@@ -516,6 +546,8 @@ export class PlacementController {
 
       if (this.getActiveTouchCount() >= 2 && !this.canStartTouchCameraGesture()) {
         this.lockControls();
+        this.consumeEvent(event);
+        return;
       }
     }
 
@@ -523,7 +555,6 @@ export class PlacementController {
       return;
     }
 
-    // ROTATE 상태에서는 카메라 완전 차단
     if (this.blockSystem.state === "ROTATE") {
       this.lockControls();
 
@@ -556,10 +587,15 @@ export class PlacementController {
       this.selectedAxis = null;
       this.rotateGizmo.setActiveAxis(null);
 
-      if (hitInfo.blockHit) {
+      // 요구사항 4:
+      // 회전기즈모 활성 상태에서 가이드 밖 터치 시 회전 해제
+      if (!hitInfo.onGuide) {
         this.blockSystem.exitRotateMode();
+        this.consumeEvent(event);
+        return;
       }
 
+      // 가이드 안이지만 회전축이 아닌 곳 누르면 그냥 카메라 차단
       this.consumeEvent(event);
       return;
     }
@@ -600,45 +636,46 @@ export class PlacementController {
       return;
     }
 
-    if (!hitInfo.blockHit) {
-      if (isTouch) {
-        if (this.shouldCameraBeBlocked()) {
-          this.lockControls();
-          this.consumeEvent(event);
-        }
-        return;
+    // 가이드 안쪽 터치도 카메라가 아니라 오브젝트 조작 우선
+    if (hitInfo.onGuide) {
+      this.activePointerId = event.pointerId;
+      this.isDragging = false;
+      this.isRotating = false;
+      this.selectedAxis = null;
+      this.moveAxis = null;
+
+      this.pointerDownScreen.set(event.clientX, event.clientY);
+      this.lastPointerScreen.set(event.clientX, event.clientY);
+
+      this.lockControls();
+
+      if (this.domElement.setPointerCapture) {
+        this.domElement.setPointerCapture(event.pointerId);
       }
 
-      this.unlockControls();
+      const pos = block.body.translation();
+      this.dragPlane.set(new THREE.Vector3(0, 1, 0), -pos.y);
+
+      if (this.raycaster.ray.intersectPlane(this.dragPlane, this.hitPoint)) {
+        this.dragOffset.set(pos.x, pos.y, pos.z).sub(this.hitPoint);
+      } else {
+        this.dragOffset.set(0, 0, 0);
+      }
+
+      this.beginLongPressCountdown();
+      this.consumeEvent(event);
       return;
     }
 
-    this.activePointerId = event.pointerId;
-    this.isDragging = false;
-    this.isRotating = false;
-    this.selectedAxis = null;
-    this.moveAxis = null;
-
-    this.pointerDownScreen.set(event.clientX, event.clientY);
-    this.lastPointerScreen.set(event.clientX, event.clientY);
-
-    this.lockControls();
-
-    if (this.domElement.setPointerCapture) {
-      this.domElement.setPointerCapture(event.pointerId);
+    if (isTouch) {
+      if (this.shouldCameraBeBlocked()) {
+        this.lockControls();
+        this.consumeEvent(event);
+      }
+      return;
     }
 
-    const pos = block.body.translation();
-    this.dragPlane.set(new THREE.Vector3(0, 1, 0), -pos.y);
-
-    if (this.raycaster.ray.intersectPlane(this.dragPlane, this.hitPoint)) {
-      this.dragOffset.set(pos.x, pos.y, pos.z).sub(this.hitPoint);
-    } else {
-      this.dragOffset.set(0, 0, 0);
-    }
-
-    this.beginLongPressCountdown();
-    this.consumeEvent(event);
+    this.unlockControls();
   }
 
   onPointerMove(event) {
@@ -753,8 +790,6 @@ export class PlacementController {
     this.isRotating = false;
     this.activePointerId = null;
 
-    // 요구사항:
-    // 터치 해제 시 기즈모 하이라이트 끄기
     this.clearHighlightOnly();
 
     if (this.domElement.releasePointerCapture && event.pointerId !== undefined) {
