@@ -1,3 +1,4 @@
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js";
 import { Renderer } from "./Renderer.js";
 import { Physics } from "./Physics.js";
 import { BlockSystem } from "./BlockSystem.js";
@@ -14,20 +15,17 @@ export class Game {
 
       fallSpeed: 2,
 
-      // 시작 스폰 높이 조금 더 높게
       spawnClearance: 1.6,
       minSpawnHeight: 2.3,
 
-      // 0.5 단위 계단 반영
       heightStep: 0.5,
 
-      // 카메라
       cameraFollowLerp: 0.12,
       cameraHeightOffset: 0.25,
       cameraMinTargetY: 0.75,
     };
 
-    this.appVersion = "v0.1.15-simple-loading";
+    this.appVersion = "v0.1.19-next-preview-ui";
 
     this.renderer = new Renderer(this.config);
     this.physics = new Physics(this.config);
@@ -66,7 +64,15 @@ export class Game {
       this.heightLabel.parentElement.appendChild(this.versionLabel);
     }
 
-    // BGM
+    this.nextPanel = null;
+    this.nextNameLabel = null;
+    this.nextCanvas = null;
+    this.nextPreviewRenderer = null;
+    this.nextPreviewScene = null;
+    this.nextPreviewCamera = null;
+    this.nextPreviewMesh = null;
+    this.nextPreviewKey = "";
+
     this.bgmEnabled = true;
     this.bgmUnlocked = false;
     this.bgm = new Audio("./assets/bgm.mp3");
@@ -76,14 +82,12 @@ export class Game {
 
     this.bgmToggleButton = null;
 
-    // Loading UI
     this.loadingOverlay = null;
     this.loadingStatusLabel = null;
     this.loadingProgressBar = null;
     this.loadingProgressFill = null;
     this.loadingUiStyleTag = null;
 
-    // Loop state
     this.isLoading = false;
     this.loadingRafId = null;
     this.isAnimating = false;
@@ -97,6 +101,7 @@ export class Game {
 
     this.createLoadingScreen();
     this.createBgmToggleButton();
+    this.createNextPreviewUI();
     this.setupBgmUnlock();
   }
 
@@ -186,6 +191,185 @@ export class Game {
     this.loadingProgressFill = progressFill;
   }
 
+  createNextPreviewUI() {
+    let panel = document.getElementById("nextBlockPanel");
+
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "nextBlockPanel";
+      panel.style.position = "fixed";
+      panel.style.top = "72px";
+      panel.style.right = "16px";
+      panel.style.width = "170px";
+      panel.style.padding = "12px";
+      panel.style.borderRadius = "16px";
+      panel.style.background = "rgba(0,0,0,0.48)";
+      panel.style.backdropFilter = "blur(8px)";
+      panel.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
+      panel.style.border = "1px solid rgba(255,255,255,0.10)";
+      panel.style.zIndex = "20";
+      panel.style.color = "white";
+      panel.style.userSelect = "none";
+      panel.style.webkitUserSelect = "none";
+
+      const title = document.createElement("div");
+      title.textContent = "NEXT";
+      title.style.fontSize = "12px";
+      title.style.fontWeight = "700";
+      title.style.letterSpacing = "1.2px";
+      title.style.opacity = "0.82";
+      title.style.marginBottom = "8px";
+
+      const canvasWrap = document.createElement("div");
+      canvasWrap.style.width = "146px";
+      canvasWrap.style.height = "146px";
+      canvasWrap.style.borderRadius = "12px";
+      canvasWrap.style.overflow = "hidden";
+      canvasWrap.style.background =
+        "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 52%, rgba(255,255,255,0.01) 100%)";
+      canvasWrap.style.border = "1px solid rgba(255,255,255,0.08)";
+      canvasWrap.style.marginBottom = "8px";
+
+      const canvas = document.createElement("canvas");
+      canvas.id = "nextBlockCanvas";
+      canvas.width = 292;
+      canvas.height = 292;
+      canvas.style.width = "146px";
+      canvas.style.height = "146px";
+      canvas.style.display = "block";
+
+      const name = document.createElement("div");
+      name.id = "nextBlockNameLabel";
+      name.textContent = "-";
+      name.style.fontSize = "12px";
+      name.style.textAlign = "center";
+      name.style.opacity = "0.92";
+      name.style.wordBreak = "break-word";
+      name.style.lineHeight = "1.35";
+      name.style.minHeight = "32px";
+
+      canvasWrap.appendChild(canvas);
+      panel.appendChild(title);
+      panel.appendChild(canvasWrap);
+      panel.appendChild(name);
+      document.body.appendChild(panel);
+
+      this.nextCanvas = canvas;
+      this.nextNameLabel = name;
+    } else {
+      this.nextCanvas = panel.querySelector("#nextBlockCanvas");
+      this.nextNameLabel = panel.querySelector("#nextBlockNameLabel");
+    }
+
+    this.nextPanel = panel;
+    this.initNextPreviewScene();
+  }
+
+  initNextPreviewScene() {
+    if (!this.nextCanvas || this.nextPreviewRenderer) return;
+
+    this.nextPreviewRenderer = new THREE.WebGLRenderer({
+      canvas: this.nextCanvas,
+      antialias: true,
+      alpha: true,
+    });
+
+    this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.nextPreviewRenderer.setSize(146, 146, false);
+
+    this.nextPreviewScene = new THREE.Scene();
+
+    this.nextPreviewCamera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
+    this.nextPreviewCamera.position.set(0, 0.7, 4.2);
+    this.nextPreviewCamera.lookAt(0, 0, 0);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 1.0);
+    this.nextPreviewScene.add(ambient);
+
+    const dir1 = new THREE.DirectionalLight(0xffffff, 1.15);
+    dir1.position.set(2.4, 2.8, 3.2);
+    this.nextPreviewScene.add(dir1);
+
+    const dir2 = new THREE.DirectionalLight(0xaac8ff, 0.55);
+    dir2.position.set(-2.0, 1.2, -2.2);
+    this.nextPreviewScene.add(dir2);
+
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(1.45, 40),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.07,
+        side: THREE.DoubleSide,
+      })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -1.02;
+    this.nextPreviewScene.add(floor);
+  }
+
+  formatModelName(fileName = "") {
+    return fileName
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  async updateNextPreviewUI() {
+    if (!this.blockSystem) return;
+
+    const nextInfo = await this.blockSystem.getNextBlockInfo();
+    if (!nextInfo) return;
+
+    const key = `${nextInfo.path}::${nextInfo.scaleFactor ?? 1}`;
+    if (this.nextPreviewKey === key) return;
+
+    this.nextPreviewKey = key;
+
+    if (this.nextNameLabel) {
+      this.nextNameLabel.textContent = this.formatModelName(
+        nextInfo.file ?? nextInfo.path
+      );
+    }
+
+    if (this.nextPreviewMesh) {
+      this.nextPreviewScene.remove(this.nextPreviewMesh);
+      this.nextPreviewMesh = null;
+    }
+
+    const previewGroup = await this.blockSystem.factory.createUiPreviewObject(nextInfo);
+    if (!previewGroup) return;
+
+    const box = new THREE.Box3().setFromObject(previewGroup);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    previewGroup.position.sub(center);
+
+    const maxAxis = Math.max(size.x, size.y, size.z) || 1;
+    const fitScale = 1.9 / maxAxis;
+    previewGroup.scale.multiplyScalar(fitScale);
+    previewGroup.position.y = -0.08;
+
+    this.nextPreviewScene.add(previewGroup);
+    this.nextPreviewMesh = previewGroup;
+    this.renderNextPreview();
+  }
+
+  renderNextPreview() {
+    if (!this.nextPreviewRenderer || !this.nextPreviewScene || !this.nextPreviewCamera) return;
+
+    if (this.nextPreviewMesh) {
+      this.nextPreviewMesh.rotation.y += 0.01;
+      this.nextPreviewMesh.rotation.x = Math.sin(performance.now() * 0.0012) * 0.08;
+    }
+
+    this.nextPreviewRenderer.render(this.nextPreviewScene, this.nextPreviewCamera);
+  }
+
   setLoadingProgress(progress = 0, text = "") {
     const safeProgress = Math.max(0, Math.min(1, progress));
 
@@ -224,6 +408,7 @@ export class Game {
       this.renderer.render();
     }
 
+    this.renderNextPreview();
     this.loadingRafId = requestAnimationFrame(this.loadingLoop);
   }
 
@@ -248,6 +433,7 @@ export class Game {
       this.renderer.render();
     }
 
+    this.renderNextPreview();
     await this.waitForNextFrame();
 
     if (this.blockSystem) {
@@ -266,6 +452,7 @@ export class Game {
       this.renderer.render();
     }
 
+    this.renderNextPreview();
     await this.waitForNextFrame();
   }
 
@@ -299,8 +486,6 @@ export class Game {
 
       this.setLoadingProgress(0.08, "렌더러 준비 중...");
       await this.renderer.init();
-
-      // 스카이박스/배경이 로딩되자마자 바로 한 번 보여주기
       this.renderer.render();
 
       this.setLoadingProgress(0.35, "물리 엔진 초기화 중...");
@@ -313,6 +498,9 @@ export class Game {
         () => this.handleFail(),
         this.config
       );
+
+      this.setLoadingProgress(0.68, "다음 블럭 준비 중...");
+      await this.blockSystem.getNextBlockInfo();
 
       this.setLoadingProgress(0.75, "첫 블럭 로딩 중...");
       await this.blockSystem.createBlock();
@@ -339,6 +527,7 @@ export class Game {
       this.updateBestHeightUI();
       this.updateVersionUI();
       this.updateBgmButtonUI();
+      await this.updateNextPreviewUI();
 
       window.addEventListener("resize", this.onResize);
       this.actionButton?.addEventListener("click", this.onActionButtonClick);
@@ -347,7 +536,6 @@ export class Game {
 
       this.setLoadingProgress(1, "준비 완료");
 
-      // 실제 장면이 먼저 보이게 한 뒤 로딩 화면 제거
       await this.waitForFirstVisibleFrame();
 
       this.stopLoadingRenderLoop();
@@ -500,22 +688,24 @@ export class Game {
       return;
     }
 
-if (state === "WAITING") {
-  this.actionButton.disabled = true;
-  this.actionButton.textContent = "착지중";
-  this.actionButton.style.opacity = "0.5";
-  return;
-}
+    if (state === "WAITING") {
+      this.actionButton.disabled = true;
+      this.actionButton.textContent = "착지중";
+      this.actionButton.style.opacity = "0.5";
+      return;
+    }
+
     this.actionButton.disabled = true;
     this.actionButton.textContent = "대기중";
     this.actionButton.style.opacity = "0.5";
   }
 
-  onActionButtonClick() {
+  async onActionButtonClick() {
     if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
 
     if (this.blockSystem.state === "EDIT" || this.blockSystem.state === "ROTATE") {
       this.blockSystem.confirmCurrentBlock();
+      await this.updateNextPreviewUI();
     }
 
     this.updateControlButton();
@@ -524,6 +714,11 @@ if (state === "WAITING") {
   onResize() {
     if (this.renderer.resize) {
       this.renderer.resize(window.innerWidth, window.innerHeight);
+    }
+
+    if (this.nextPreviewRenderer) {
+      this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.nextPreviewRenderer.setSize(146, 146, false);
     }
   }
 
@@ -564,6 +759,8 @@ if (state === "WAITING") {
     this.blockSystem.reset();
     this.renderer.resetCamera();
 
+    this.nextPreviewKey = "";
+
     this.updateNicknameUI();
     this.updateHeightUI();
     this.updateBestHeightUI();
@@ -571,17 +768,18 @@ if (state === "WAITING") {
 
     this.isGameOver = false;
 
+    await this.blockSystem.getNextBlockInfo();
     await this.blockSystem.createBlock();
+    await this.updateNextPreviewUI();
 
     this.isRestarting = false;
     this.updateControlButton();
   }
 
-  animate(time) {
+  async animate(time) {
     if (!this.isAnimating) return;
 
     requestAnimationFrame(this.animate);
-
     this.lastTime = time;
 
     if (!this.isGameOver && !this.isRestarting && this.blockSystem) {
@@ -593,6 +791,7 @@ if (state === "WAITING") {
 
       this.updateHeightUI();
       this.updateControlButton();
+      await this.updateNextPreviewUI();
     }
 
     if (this.placementController) {
@@ -604,5 +803,6 @@ if (state === "WAITING") {
     }
 
     this.renderer.render();
+    this.renderNextPreview();
   }
 }

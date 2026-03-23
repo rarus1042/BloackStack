@@ -17,89 +17,66 @@ export class BlockFactory {
 
     this.loader = new GLTFLoader();
 
-    // [{ path, scaleFactor }]
     this.modelEntries = [];
     this.modelListLoaded = false;
+    this.nextModelEntry = null;
 
     this.modelCache = new Map();
     this.scaleCache = new Map();
     this.collisionCache = new Map();
   }
 
- normalizeModelEntry(entry) {
-  if (typeof entry === "string") {
-    const trimmed = entry.trim();
-    if (!trimmed) return null;
+  normalizeModelEntry(entry) {
+    if (typeof entry === "string") {
+      const trimmed = entry.trim();
+      if (!trimmed) return null;
 
-    return {
-      path: `models/${trimmed}`,
-      scaleFactor: 1.0,
-      weight: 50, // 기본값
-    };
-  }
-
-  if (entry && typeof entry === "object") {
-    const file =
-      typeof entry.file === "string"
-        ? entry.file.trim()
-        : typeof entry.name === "string"
-        ? entry.name.trim()
-        : "";
-
-    if (!file) return null;
-
-    let scaleFactor =
-      typeof entry.scaleFactor === "number"
-        ? entry.scaleFactor
-        : typeof entry.scale === "number"
-        ? entry.scale
-        : 1.0;
-
-    if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
-      scaleFactor = 1.0;
+      return {
+        file: trimmed,
+        path: `models/${trimmed}`,
+        scaleFactor: 1.0,
+        weight: 50,
+      };
     }
 
-    let weight =
-      typeof entry.weight === "number"
-        ? Math.round(entry.weight)
-        : 50;
+    if (entry && typeof entry === "object") {
+      const file =
+        typeof entry.file === "string"
+          ? entry.file.trim()
+          : typeof entry.name === "string"
+          ? entry.name.trim()
+          : "";
 
-    // 🔥 1~100 강제 제한
-    weight = Math.max(1, Math.min(100, weight));
+      if (!file) return null;
 
-    return {
-      path: `models/${file}`,
-      scaleFactor,
-      weight,
-    };
-  }
+      let scaleFactor =
+        typeof entry.scaleFactor === "number"
+          ? entry.scaleFactor
+          : typeof entry.scale === "number"
+          ? entry.scale
+          : 1.0;
 
-  return null;
-}
+      if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
+        scaleFactor = 1.0;
+      }
 
-getWeightedRandomEntry() {
-  if (!this.modelEntries.length) {
-    throw new Error("BlockFactory: modelEntries is empty.");
-  }
+      let weight =
+        typeof entry.weight === "number"
+          ? Math.round(entry.weight)
+          : 50;
 
-  let totalWeight = 0;
+      weight = Math.max(1, Math.min(100, weight));
 
-  for (const entry of this.modelEntries) {
-    totalWeight += entry.weight;
-  }
-
-  // 🔥 정수 기반 랜덤
-  let r = Math.floor(Math.random() * totalWeight) + 1;
-
-  for (const entry of this.modelEntries) {
-    r -= entry.weight;
-    if (r <= 0) {
-      return entry;
+      return {
+        file,
+        path: `models/${file}`,
+        scaleFactor,
+        weight,
+      };
     }
-  }
 
-  return this.modelEntries[this.modelEntries.length - 1];
-}
+    return null;
+  }
 
   async ensureModelListLoaded() {
     if (this.modelListLoaded) return;
@@ -127,9 +104,47 @@ getWeightedRandomEntry() {
     }
   }
 
-getRandomModelEntry() {
-  return this.getWeightedRandomEntry();
-}
+  getWeightedRandomEntry() {
+    if (!this.modelEntries.length) {
+      throw new Error("BlockFactory: modelEntries is empty.");
+    }
+
+    let totalWeight = 0;
+    for (const entry of this.modelEntries) {
+      totalWeight += entry.weight;
+    }
+
+    let r = Math.floor(Math.random() * totalWeight) + 1;
+
+    for (const entry of this.modelEntries) {
+      r -= entry.weight;
+      if (r <= 0) {
+        return { ...entry };
+      }
+    }
+
+    return { ...this.modelEntries[this.modelEntries.length - 1] };
+  }
+
+  async ensureNextModelEntry() {
+    await this.ensureModelListLoaded();
+
+    if (!this.nextModelEntry) {
+      this.nextModelEntry = this.getWeightedRandomEntry();
+    }
+
+    return this.nextModelEntry;
+  }
+
+  async peekNextModelEntry() {
+    return this.ensureNextModelEntry();
+  }
+
+  async consumeNextModelEntry() {
+    const current = await this.ensureNextModelEntry();
+    this.nextModelEntry = this.getWeightedRandomEntry();
+    return current;
+  }
 
   async loadModel(modelPath) {
     if (this.modelCache.has(modelPath)) {
@@ -162,7 +177,7 @@ getRandomModelEntry() {
     return scale;
   }
 
-  createRenderObject(baseModel, scale) {
+  createCenteredModelGroup(baseModel, scale) {
     const wrapper = new THREE.Group();
     const model = baseModel.clone(true);
 
@@ -175,8 +190,26 @@ getRandomModelEntry() {
     model.position.sub(center);
     wrapper.add(model);
 
+    return wrapper;
+  }
+
+  createRenderObject(baseModel, scale) {
+    const wrapper = this.createCenteredModelGroup(baseModel, scale);
     this.scene.add(wrapper);
     return wrapper;
+  }
+
+  async createUiPreviewObject(entry) {
+    if (!entry?.path) return null;
+
+    const baseModel = await this.loadModel(entry.path);
+    const scale = this.getModelScale(
+      baseModel,
+      entry.path,
+      entry.scaleFactor ?? 1.0
+    );
+
+    return this.createCenteredModelGroup(baseModel, scale);
   }
 
   extractGeometryFromScene(root) {
@@ -223,8 +256,8 @@ getRandomModelEntry() {
     };
   }
 
-  buildCollisionData(baseModel, modelPath, scale) {
-    const cacheKey = `${modelPath}::${scale}`;
+  buildCollisionData(baseModel, modelPath, scale, scaleFactor = 1.0) {
+    const cacheKey = `${modelPath}::${scaleFactor}`;
 
     if (this.collisionCache.has(cacheKey)) {
       return this.collisionCache.get(cacheKey);
@@ -312,16 +345,20 @@ getRandomModelEntry() {
   }
 
   async createPreviewBlock(spawnY, id) {
-    await this.ensureModelListLoaded();
+    const entry = await this.consumeNextModelEntry();
 
-    const modelEntry = this.getRandomModelEntry();
-    const modelPath = modelEntry.path;
-    const scaleFactor = modelEntry.scaleFactor ?? 1.0;
+    const modelPath = entry.path;
+    const scaleFactor = entry.scaleFactor ?? 1.0;
 
     const baseModel = await this.loadModel(modelPath);
 
     const scale = this.getModelScale(baseModel, modelPath, scaleFactor);
-    const collision = this.buildCollisionData(baseModel, modelPath, scale);
+    const collision = this.buildCollisionData(
+      baseModel,
+      modelPath,
+      scale,
+      scaleFactor
+    );
     const mesh = this.createRenderObject(baseModel, scale);
     const preview = this.createPreviewBody(spawnY, collision.vertices);
 
@@ -334,11 +371,14 @@ getRandomModelEntry() {
       state: "preview",
       collision,
       modelPath,
+      modelFile: entry.file,
       scaleFactor,
+      weight: entry.weight,
       contactFrames: 0,
       stableFrames: 0,
       landingFrames: 0,
       landingStartY: null,
+      landingStartTime: null,
       committed: false,
     };
   }
@@ -358,6 +398,7 @@ getRandomModelEntry() {
     block.stableFrames = 0;
     block.landingFrames = 0;
     block.landingStartY = null;
+    block.landingStartTime = null;
     block.committed = false;
 
     return block;

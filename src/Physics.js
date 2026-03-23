@@ -13,9 +13,8 @@ export class Physics {
   }
 
   async init() {
-    await this.RAPIER.init();
+    await this.RAPIER.init({});
 
-    // ✅ 글로벌 중력 복구
     this.world = new this.RAPIER.World({ x: 0, y: -9.81, z: 0 });
 
     this.world.integrationParameters.dt = 1 / 60;

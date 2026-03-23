@@ -105,6 +105,10 @@ export class BlockSystem {
     }
   }
 
+  async getNextBlockInfo() {
+    return this.factory.peekNextModelEntry();
+  }
+
   quantizeHeightUp(height) {
     const step = this.heightStep;
     if (step <= 0) return height;
