@@ -273,6 +273,7 @@ export class Game {
         domElement: this.renderer.renderer.domElement,
         controls: this.renderer.controls,
         blockSystem: this.blockSystem,
+        groundMesh: this.renderer.groundMesh,
         blockSize: this.config.blockSize,
         stageSize: this.config.stageSize,
         previewClampPadding: this.config.previewClampPadding,

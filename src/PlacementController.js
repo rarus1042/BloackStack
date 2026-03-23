@@ -12,6 +12,7 @@ export class PlacementController {
     this.blockSystem = options.blockSystem;
     this.stageSize = options.stageSize ?? 5;
     this.previewClampPadding = options.previewClampPadding ?? 0.35;
+    this.groundMesh = options.groundMesh ?? null;
 
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -19,6 +20,12 @@ export class PlacementController {
     this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.hitPoint = new THREE.Vector3();
     this.dragOffset = new THREE.Vector3();
+
+    this.downRaycaster = new THREE.Raycaster();
+    this.downRayOrigin = new THREE.Vector3();
+    this.downRayDirection = new THREE.Vector3(0, -1, 0);
+    this.projectionStart = new THREE.Vector3();
+    this.projectionEnd = new THREE.Vector3();
 
     this.activePointerId = null;
     this.isDragging = false;
@@ -132,6 +139,7 @@ export class PlacementController {
     }
 
     this.guide.setHeight(block.mesh.position.y);
+    this.updateProjectionRay(block);
     this.guide.show();
 
     if (this.selectionMode === "MOVE") {
@@ -168,6 +176,63 @@ export class PlacementController {
 
   getPreviewBlock() {
     return this.blockSystem?.getCurrentPreviewBlock() ?? null;
+  }
+
+  updateProjectionRay(block) {
+    if (!block?.mesh) {
+      this.guide.hideProjection();
+      return;
+    }
+
+    const startY = block.mesh.position.y - (block.halfHeight ?? 0.5);
+    this.projectionStart.set(block.mesh.position.x, startY, block.mesh.position.z);
+
+    const targets = [];
+
+    if (this.groundMesh) {
+      targets.push(this.groundMesh);
+    }
+
+    if (this.blockSystem?.blocks?.length) {
+      for (const b of this.blockSystem.blocks) {
+        if (b === block) continue;
+        if (!b.mesh) continue;
+        if (b.state === "preview") continue;
+        targets.push(b.mesh);
+      }
+    }
+
+    if (targets.length === 0) {
+      this.guide.hideProjection();
+      return;
+    }
+
+    this.downRayOrigin.set(
+      this.projectionStart.x,
+      this.projectionStart.y + 0.05,
+      this.projectionStart.z
+    );
+
+    this.downRaycaster.set(this.downRayOrigin, this.downRayDirection);
+    this.downRaycaster.far = 100;
+
+    const hits = this.downRaycaster.intersectObjects(targets, true);
+
+    if (!hits.length) {
+      this.guide.hideProjection();
+      return;
+    }
+
+    const hit = hits[0];
+    this.projectionEnd.copy(hit.point);
+    this.projectionEnd.y += 0.015;
+
+    if (this.projectionEnd.y >= this.projectionStart.y - 0.01) {
+      this.guide.hideProjection();
+      return;
+    }
+
+    this.guide.updateProjection(this.projectionStart, this.projectionEnd);
   }
 
   consumeEvent(event) {
@@ -207,24 +272,24 @@ export class PlacementController {
     this.rotateGizmo.unlockAxis();
     this.moveGizmo.setActiveAxis(null);
     this.rotateGizmo.setActiveAxis(null);
-    
   }
 
-setMoveSelection() {
-  if (this.blockSystem?.state === "ROTATE") {
-    this.blockSystem.exitRotateMode();
+  setMoveSelection() {
+    if (this.blockSystem?.state === "ROTATE") {
+      this.blockSystem.exitRotateMode();
+    }
+
+    this.selectionMode = "MOVE";
+    this.pressTarget = "NONE";
+    this.isDragging = false;
+    this.isRotating = false;
+    this.selectedAxis = null;
+    this.moveAxis = null;
+
+    this.rotateGizmo.unlockAxis();
+    this.rotateGizmo.setActiveAxis(null);
   }
 
-  this.selectionMode = "MOVE";
-  this.pressTarget = "NONE";
-  this.isDragging = false;
-  this.isRotating = false;
-  this.selectedAxis = null;
-  this.moveAxis = null;
-
-  this.rotateGizmo.unlockAxis();
-  this.rotateGizmo.setActiveAxis(null);
-}
   setRotateSelection() {
     if (this.blockSystem?.state === "EDIT") {
       this.blockSystem.enterRotateMode();
