@@ -1,6 +1,6 @@
 {
   "files": [
-    "dog_1.glb",
-    "wolf_1.glb"
+    { "file": "dog_1.glb", "scaleFactor": 0.6 },
+    { "file": "wolf_1.glb", "scaleFactor": 1.5 }
   ]
 }

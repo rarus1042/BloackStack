@@ -26,7 +26,8 @@ export class BlockSystem {
 
     this.liveHeight = 0;
     this.stableHeight = 0;
-this.heightStep = 0.5; // ★ 추가 (중요)
+    this.heightStep = options.heightStep ?? 0.5;
+
     this.previewX = 0;
     this.previewY = 0;
     this.previewZ = 0;
@@ -37,12 +38,6 @@ this.heightStep = 0.5; // ★ 추가 (중요)
 
     this.waitingBlockId = 1;
     this.lastCommittedBlockId = 0;
-
-    this.structureStableFrames = 0;
-    this.structureStableFramesRequired =
-      options.structureStableFramesRequired ?? 8;
-
-    this.waitingPlacedCount = 0;
 
     this.factory = new BlockFactory(scene, physics, {
       blockSize: this.blockSize,
@@ -56,16 +51,24 @@ this.heightStep = 0.5; // ★ 추가 (중요)
       stageSize: this.stageSize,
       failY: this.failY,
 
-      contactVerticalThreshold: 0.28,
-      contactHorizontalThreshold: 0.22,
+      contactVerticalThreshold: 0.32,
+      contactHorizontalThreshold: 0.26,
       contactFramesRequired: 2,
 
-      landingMinFrames: 8,
-      landingStableFramesRequired: 12,
-      maxLandingYDelta: 0.03,
+      landingMinFrames: 4,
+      landingStableFramesRequired: 4,
+      maxLandingYDelta: 0.02,
 
-      largeMoveLinearThreshold: 0.5,
-      largeMoveAngularThreshold: 0.5,
+      largeMoveLinearThreshold: 0.9,
+      largeMoveAngularThreshold: 0.9,
+
+      jitterLinearMin: 0.02,
+      jitterLinearMax: 0.22,
+      jitterAngularMin: 0.02,
+      jitterAngularMax: 0.32,
+      jitterPositionDeltaMax: 0.006,
+      jitterYDeltaMax: 0.006,
+      jitterFramesRequired: 16,
     });
 
     this.meshSync = new BlockMeshSync();
@@ -73,8 +76,8 @@ this.heightStep = 0.5; // ★ 추가 (중요)
 
   async createBlock() {
     if (this.currentBlock) return;
-    if (this.state === "WAITING") return;
     if (this.isSpawning) return;
+    if (this.state === "WAITING") return;
 
     this.isSpawning = true;
 
@@ -101,20 +104,21 @@ this.heightStep = 0.5; // ★ 추가 (중요)
     }
   }
 
-quantizeHeightUp(height) {
-  const step = this.heightStep;
-  if (step <= 0) return height;
-  return Math.floor(height / step) * step;
-}
+  quantizeHeightUp(height) {
+    const step = this.heightStep;
+    if (step <= 0) return height;
+    return Math.floor(height / step) * step;
+  }
 
-getSpawnHeight() {
-  const steppedHeight = this.quantizeHeightUp(this.stableHeight);
+  getSpawnHeight() {
+    const steppedHeight = this.quantizeHeightUp(this.stableHeight);
 
-  return Math.max(
-    steppedHeight + this.spawnClearance,
-    this.minSpawnHeight
-  );
-}
+    return Math.max(
+      steppedHeight + this.spawnClearance,
+      this.minSpawnHeight
+    );
+  }
+
   getCurrentPreviewBlock() {
     if (!this.currentBlock) return null;
     if (this.currentBlock.state !== "preview") return null;
@@ -199,10 +203,7 @@ getSpawnHeight() {
     this.lastCommittedBlockId = block.id;
 
     this.currentBlock = null;
-
     this.state = "WAITING";
-    this.structureStableFrames = 0;
-    this.waitingPlacedCount = this.monitor.getPlacedBlockCount(this.blocks);
 
     return true;
   }
@@ -212,39 +213,15 @@ getSpawnHeight() {
     this.stableHeight = this.monitor.computeSettledHeight(this.blocks);
   }
 
-  tryCommitStableStructure() {
+  tryFinishCurrentLanding() {
     if (this.state !== "WAITING") return;
 
-    const placedCount = this.monitor.getPlacedBlockCount(this.blocks);
-    if (placedCount !== this.waitingPlacedCount) {
-      this.waitingPlacedCount = placedCount;
-      this.structureStableFrames = 0;
-      return;
+    const lastCommitted = this.blocks.find((b) => b.id === this.lastCommittedBlockId);
+    if (!lastCommitted) return;
+
+    if (lastCommitted.state === "settled") {
+      this.state = "IDLE";
     }
-
-    const allStable = this.monitor.areAllPlacedBlocksStable(this.blocks);
-
-    if (!allStable) {
-      this.structureStableFrames = 0;
-      return;
-    }
-
-    this.structureStableFrames++;
-
-    if (this.structureStableFrames < this.structureStableFramesRequired) {
-      return;
-    }
-
-    this.lastCommittedBlockId = this.waitingBlockId - 1;
-
-    for (const b of this.blocks) {
-      if (b.state !== "preview") {
-        b.committed = true;
-      }
-    }
-
-    this.structureStableFrames = 0;
-    this.state = "IDLE";
   }
 
   maybeSpawnNextBlock() {
@@ -257,7 +234,7 @@ getSpawnHeight() {
     this.monitor.updateDynamicBlocks(this.blocks);
     this.meshSync.sync(this.blocks);
     this.updateHeights();
-    this.tryCommitStableStructure();
+    this.tryFinishCurrentLanding();
     this.maybeSpawnNextBlock();
 
     if (this.monitor.checkFail(this.blocks)) {
@@ -281,13 +258,10 @@ getSpawnHeight() {
 
     this.waitingBlockId = 1;
     this.lastCommittedBlockId = 0;
-
-    this.structureStableFrames = 0;
-    this.waitingPlacedCount = 0;
   }
 
   getMaxHeight() {
-    return this.stableHeight;
+    return Math.max(this.liveHeight, this.stableHeight);
   }
 
   getStableHeight() {

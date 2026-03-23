@@ -17,12 +17,54 @@ export class BlockFactory {
 
     this.loader = new GLTFLoader();
 
-    this.modelPaths = [];
+    // [{ path, scaleFactor }]
+    this.modelEntries = [];
     this.modelListLoaded = false;
 
     this.modelCache = new Map();
     this.scaleCache = new Map();
     this.collisionCache = new Map();
+  }
+
+  normalizeModelEntry(entry) {
+    if (typeof entry === "string") {
+      const trimmed = entry.trim();
+      if (!trimmed) return null;
+
+      return {
+        path: `models/${trimmed}`,
+        scaleFactor: 1.0,
+      };
+    }
+
+    if (entry && typeof entry === "object") {
+      const file =
+        typeof entry.file === "string"
+          ? entry.file.trim()
+          : typeof entry.name === "string"
+          ? entry.name.trim()
+          : "";
+
+      if (!file) return null;
+
+      let scaleFactor =
+        typeof entry.scaleFactor === "number"
+          ? entry.scaleFactor
+          : typeof entry.scale === "number"
+          ? entry.scale
+          : 1.0;
+
+      if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
+        scaleFactor = 1.0;
+      }
+
+      return {
+        path: `models/${file}`,
+        scaleFactor,
+      };
+    }
+
+    return null;
   }
 
   async ensureModelListLoaded() {
@@ -38,24 +80,26 @@ export class BlockFactory {
     const data = await response.json();
     const files = Array.isArray(data?.files) ? data.files : [];
 
-    this.modelPaths = files
-      .filter((name) => typeof name === "string" && name.trim().length > 0)
-      .map((name) => `models/${name}`);
+    this.modelEntries = files
+      .map((entry) => this.normalizeModelEntry(entry))
+      .filter(Boolean);
 
     this.modelListLoaded = true;
 
-    if (!this.modelPaths.length) {
-      throw new Error("Model list is empty. Add .glb files to models/ and regenerate model-list.json");
+    if (!this.modelEntries.length) {
+      throw new Error(
+        "Model list is empty. Add .glb files to models/ and regenerate model-list.json"
+      );
     }
   }
 
-  getRandomModelPath() {
-    if (!this.modelPaths.length) {
-      throw new Error("BlockFactory: modelPaths is empty.");
+  getRandomModelEntry() {
+    if (!this.modelEntries.length) {
+      throw new Error("BlockFactory: modelEntries is empty.");
     }
 
-    const index = Math.floor(Math.random() * this.modelPaths.length);
-    return this.modelPaths[index];
+    const index = Math.floor(Math.random() * this.modelEntries.length);
+    return this.modelEntries[index];
   }
 
   async loadModel(modelPath) {
@@ -69,9 +113,11 @@ export class BlockFactory {
     return scene;
   }
 
-  getModelScale(baseModel, modelPath) {
-    if (this.scaleCache.has(modelPath)) {
-      return this.scaleCache.get(modelPath);
+  getModelScale(baseModel, modelPath, scaleFactor = 1.0) {
+    const cacheKey = `${modelPath}::${scaleFactor}`;
+
+    if (this.scaleCache.has(cacheKey)) {
+      return this.scaleCache.get(cacheKey);
     }
 
     const temp = baseModel.clone(true);
@@ -80,9 +126,10 @@ export class BlockFactory {
     box.getSize(size);
 
     const maxAxis = Math.max(size.x, size.y, size.z) || 1;
-    const scale = this.blockSize / maxAxis;
+    const baseScale = this.blockSize / maxAxis;
+    const scale = baseScale * scaleFactor;
 
-    this.scaleCache.set(modelPath, scale);
+    this.scaleCache.set(cacheKey, scale);
     return scale;
   }
 
@@ -148,8 +195,10 @@ export class BlockFactory {
   }
 
   buildCollisionData(baseModel, modelPath, scale) {
-    if (this.collisionCache.has(modelPath)) {
-      return this.collisionCache.get(modelPath);
+    const cacheKey = `${modelPath}::${scale}`;
+
+    if (this.collisionCache.has(cacheKey)) {
+      return this.collisionCache.get(cacheKey);
     }
 
     const root = baseModel.clone(true);
@@ -172,7 +221,7 @@ export class BlockFactory {
       halfHeight: size.y / 2,
     };
 
-    this.collisionCache.set(modelPath, collisionData);
+    this.collisionCache.set(cacheKey, collisionData);
     return collisionData;
   }
 
@@ -207,7 +256,6 @@ export class BlockFactory {
 
     const body = this.world.createRigidBody(rbDesc);
 
-    // ✅ 글로벌 중력 사용
     body.setGravityScale(1, true);
 
     if (typeof body.enableCcd === "function") {
@@ -228,7 +276,6 @@ export class BlockFactory {
 
     const collider = this.world.createCollider(colliderDesc, body);
 
-    // ✅ 초기 속도만 한번 부여
     body.setLinvel({ x: 0, y: -this.fallSpeed, z: 0 }, true);
     body.setAngvel({ x: 0, y: 0, z: 0 }, true);
 
@@ -238,10 +285,13 @@ export class BlockFactory {
   async createPreviewBlock(spawnY, id) {
     await this.ensureModelListLoaded();
 
-    const modelPath = this.getRandomModelPath();
+    const modelEntry = this.getRandomModelEntry();
+    const modelPath = modelEntry.path;
+    const scaleFactor = modelEntry.scaleFactor ?? 1.0;
+
     const baseModel = await this.loadModel(modelPath);
 
-    const scale = this.getModelScale(baseModel, modelPath);
+    const scale = this.getModelScale(baseModel, modelPath, scaleFactor);
     const collision = this.buildCollisionData(baseModel, modelPath, scale);
     const mesh = this.createRenderObject(baseModel, scale);
     const preview = this.createPreviewBody(spawnY, collision.vertices);
@@ -255,6 +305,7 @@ export class BlockFactory {
       state: "preview",
       collision,
       modelPath,
+      scaleFactor,
       contactFrames: 0,
       stableFrames: 0,
       landingFrames: 0,

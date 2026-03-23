@@ -27,7 +27,7 @@ export class Game {
       cameraMinTargetY: 0.75,
     };
 
-    this.appVersion = "v0.1.14-loading-screen";
+    this.appVersion = "v0.1.15-simple-loading";
 
     this.renderer = new Renderer(this.config);
     this.physics = new Physics(this.config);
@@ -81,12 +81,19 @@ export class Game {
     this.loadingStatusLabel = null;
     this.loadingProgressBar = null;
     this.loadingProgressFill = null;
+    this.loadingUiStyleTag = null;
+
+    // Loop state
+    this.isLoading = false;
+    this.loadingRafId = null;
+    this.isAnimating = false;
 
     this.animate = this.animate.bind(this);
     this.onResize = this.onResize.bind(this);
     this.onActionButtonClick = this.onActionButtonClick.bind(this);
     this.onBgmToggleClick = this.onBgmToggleClick.bind(this);
     this.unlockBgm = this.unlockBgm.bind(this);
+    this.loadingLoop = this.loadingLoop.bind(this);
 
     this.createLoadingScreen();
     this.createBgmToggleButton();
@@ -114,101 +121,63 @@ export class Game {
     overlay.style.display = "flex";
     overlay.style.alignItems = "center";
     overlay.style.justifyContent = "center";
-    overlay.style.background =
-      "radial-gradient(circle at 50% 35%, rgba(58,88,128,0.95) 0%, rgba(15,20,31,0.98) 55%, rgba(5,8,14,1) 100%)";
-    overlay.style.backdropFilter = "blur(4px)";
+    overlay.style.background = "rgba(6, 10, 18, 0.28)";
+    overlay.style.backdropFilter = "blur(2px)";
     overlay.style.opacity = "1";
-    overlay.style.transition = "opacity 0.45s ease";
+    overlay.style.transition = "opacity 0.35s ease";
     overlay.style.pointerEvents = "auto";
     overlay.style.userSelect = "none";
     overlay.style.webkitUserSelect = "none";
 
     const panel = document.createElement("div");
-    panel.style.width = "min(420px, 86vw)";
-    panel.style.padding = "28px 24px";
-    panel.style.borderRadius = "22px";
-    panel.style.background = "rgba(255,255,255,0.08)";
-    panel.style.border = "1px solid rgba(255,255,255,0.14)";
-    panel.style.boxShadow = "0 20px 60px rgba(0,0,0,0.35)";
+    panel.style.width = "min(320px, 78vw)";
+    panel.style.padding = "20px 18px";
+    panel.style.borderRadius = "16px";
+    panel.style.background = "rgba(0,0,0,0.22)";
+    panel.style.border = "1px solid rgba(255,255,255,0.10)";
+    panel.style.boxShadow = "0 14px 34px rgba(0,0,0,0.18)";
     panel.style.textAlign = "center";
     panel.style.color = "#fff";
 
     const title = document.createElement("div");
     title.textContent = "3D BLOCK STACK";
-    title.style.fontSize = "clamp(24px, 5vw, 34px)";
-    title.style.fontWeight = "800";
-    title.style.letterSpacing = "2px";
-    title.style.marginBottom = "10px";
-    title.style.textShadow = "0 4px 18px rgba(0,0,0,0.3)";
-
-    const subtitle = document.createElement("div");
-    subtitle.textContent = "에셋과 월드를 준비하는 중...";
-    subtitle.style.fontSize = "14px";
-    subtitle.style.color = "rgba(255,255,255,0.78)";
-    subtitle.style.marginBottom = "22px";
-    subtitle.style.letterSpacing = "0.4px";
-
-    const spinner = document.createElement("div");
-    spinner.style.width = "58px";
-    spinner.style.height = "58px";
-    spinner.style.margin = "0 auto 18px auto";
-    spinner.style.borderRadius = "50%";
-    spinner.style.border = "4px solid rgba(255,255,255,0.18)";
-    spinner.style.borderTopColor = "#ffffff";
-    spinner.style.animation = "gameLoadingSpin 1s linear infinite";
+    title.style.fontSize = "15px";
+    title.style.fontWeight = "700";
+    title.style.letterSpacing = "1.2px";
+    title.style.marginBottom = "12px";
+    title.style.color = "rgba(255,255,255,0.96)";
 
     const status = document.createElement("div");
     status.id = "loadingStatusLabel";
-    status.textContent = "초기화 중...";
-    status.style.fontSize = "15px";
-    status.style.fontWeight = "600";
-    status.style.marginBottom = "14px";
-    status.style.color = "#ffffff";
+    status.textContent = "로딩 중...";
+    status.style.fontSize = "13px";
+    status.style.fontWeight = "500";
+    status.style.marginBottom = "10px";
+    status.style.color = "rgba(255,255,255,0.84)";
 
     const progressBar = document.createElement("div");
     progressBar.id = "loadingProgressBar";
     progressBar.style.width = "100%";
-    progressBar.style.height = "10px";
+    progressBar.style.height = "4px";
     progressBar.style.borderRadius = "999px";
     progressBar.style.overflow = "hidden";
-    progressBar.style.background = "rgba(255,255,255,0.14)";
-    progressBar.style.boxShadow = "inset 0 1px 2px rgba(0,0,0,0.25)";
-    progressBar.style.marginBottom = "12px";
+    progressBar.style.background = "rgba(255,255,255,0.16)";
+    progressBar.style.marginBottom = "0";
 
     const progressFill = document.createElement("div");
     progressFill.id = "loadingProgressFill";
     progressFill.style.width = "0%";
     progressFill.style.height = "100%";
     progressFill.style.borderRadius = "999px";
-    progressFill.style.background =
-      "linear-gradient(90deg, #7cc7ff 0%, #9bffb0 55%, #ffffff 100%)";
-    progressFill.style.boxShadow = "0 0 18px rgba(124,199,255,0.45)";
-    progressFill.style.transition = "width 0.25s ease";
+    progressFill.style.background = "rgba(255,255,255,0.92)";
+    progressFill.style.boxShadow = "0 0 10px rgba(255,255,255,0.18)";
+    progressFill.style.transition = "width 0.2s ease";
 
     progressBar.appendChild(progressFill);
-
-    const hint = document.createElement("div");
-    hint.textContent = "잠시만 기다려주세요";
-    hint.style.fontSize = "12px";
-    hint.style.color = "rgba(255,255,255,0.62)";
-    hint.style.letterSpacing = "0.3px";
-
     panel.appendChild(title);
-    panel.appendChild(subtitle);
-    panel.appendChild(spinner);
     panel.appendChild(status);
     panel.appendChild(progressBar);
-    panel.appendChild(hint);
     overlay.appendChild(panel);
-
-    const style = document.createElement("style");
-    style.textContent = `
-      @keyframes gameLoadingSpin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-    `;
-    document.head.appendChild(style);
     document.body.appendChild(overlay);
 
     this.loadingOverlay = overlay;
@@ -229,13 +198,84 @@ export class Game {
     }
   }
 
+  startLoadingRenderLoop() {
+    if (this.isLoading) return;
+    this.isLoading = true;
+    this.loadingLoop();
+  }
+
+  stopLoadingRenderLoop() {
+    this.isLoading = false;
+
+    if (this.loadingRafId !== null) {
+      cancelAnimationFrame(this.loadingRafId);
+      this.loadingRafId = null;
+    }
+  }
+
+  loadingLoop() {
+    if (!this.isLoading) return;
+
+    if (this.renderer?.update) {
+      this.renderer.update();
+    }
+
+    if (this.renderer?.render) {
+      this.renderer.render();
+    }
+
+    this.loadingRafId = requestAnimationFrame(this.loadingLoop);
+  }
+
+  async waitForNextFrame() {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  async waitForFirstVisibleFrame() {
+    if (this.blockSystem) {
+      this.blockSystem.update();
+    }
+
+    if (this.placementController) {
+      this.placementController.update();
+    }
+
+    if (this.renderer?.update) {
+      this.renderer.update();
+    }
+
+    if (this.renderer?.render) {
+      this.renderer.render();
+    }
+
+    await this.waitForNextFrame();
+
+    if (this.blockSystem) {
+      this.blockSystem.update();
+    }
+
+    if (this.placementController) {
+      this.placementController.update();
+    }
+
+    if (this.renderer?.update) {
+      this.renderer.update();
+    }
+
+    if (this.renderer?.render) {
+      this.renderer.render();
+    }
+
+    await this.waitForNextFrame();
+  }
+
   async hideLoadingScreen() {
     if (!this.loadingOverlay) return;
 
     this.loadingOverlay.style.opacity = "0";
     this.loadingOverlay.style.pointerEvents = "none";
 
-    await new Promise((resolve) => setTimeout(resolve, 460));
+    await new Promise((resolve) => setTimeout(resolve, 360));
 
     if (this.loadingOverlay?.parentNode) {
       this.loadingOverlay.parentNode.removeChild(this.loadingOverlay);
@@ -247,10 +287,21 @@ export class Game {
     this.loadingProgressFill = null;
   }
 
+  startMainLoop() {
+    if (this.isAnimating) return;
+    this.isAnimating = true;
+    requestAnimationFrame(this.animate);
+  }
+
   async start() {
     try {
+      this.startLoadingRenderLoop();
+
       this.setLoadingProgress(0.08, "렌더러 준비 중...");
       await this.renderer.init();
+
+      // 스카이박스/배경이 로딩되자마자 바로 한 번 보여주기
+      this.renderer.render();
 
       this.setLoadingProgress(0.35, "물리 엔진 초기화 중...");
       await this.physics.init();
@@ -295,11 +346,19 @@ export class Game {
       this.updateControlButton();
 
       this.setLoadingProgress(1, "준비 완료");
-      await this.hideLoadingScreen();
 
-      this.animate(0);
+      // 실제 장면이 먼저 보이게 한 뒤 로딩 화면 제거
+      await this.waitForFirstVisibleFrame();
+
+      this.stopLoadingRenderLoop();
+      this.startMainLoop();
+
+      await this.waitForFirstVisibleFrame();
+      await this.hideLoadingScreen();
     } catch (error) {
       console.error("Game start failed:", error);
+      this.stopLoadingRenderLoop();
+
       this.setLoadingProgress(1, "로딩 실패");
 
       if (this.loadingStatusLabel) {
@@ -521,6 +580,8 @@ export class Game {
   }
 
   animate(time) {
+    if (!this.isAnimating) return;
+
     requestAnimationFrame(this.animate);
 
     this.lastTime = time;
