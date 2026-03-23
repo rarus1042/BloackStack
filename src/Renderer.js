@@ -41,14 +41,27 @@ export class Renderer {
     canvas.style.display = "block";
     canvas.style.zIndex = "0";
 
+    // 모바일 터치 입력 안정화
+    canvas.style.touchAction = "none";
+    canvas.style.webkitTouchCallout = "none";
+    canvas.style.webkitTapHighlightColor = "transparent";
+    canvas.style.userSelect = "none";
+    canvas.style.webkitUserSelect = "none";
+
     document.documentElement.style.margin = "0";
     document.documentElement.style.width = "100%";
     document.documentElement.style.height = "100%";
+    document.documentElement.style.overflow = "hidden";
+    document.documentElement.style.touchAction = "none";
 
     document.body.style.margin = "0";
     document.body.style.width = "100%";
     document.body.style.height = "100%";
     document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+    document.body.style.overscrollBehavior = "none";
+    document.body.style.userSelect = "none";
+    document.body.style.webkitUserSelect = "none";
 
     document.body.appendChild(canvas);
 
@@ -105,7 +118,10 @@ export class Renderer {
 
           this.backgroundTexture = texture;
           this.scene.background = texture;
-          this.scene.environment = texture;
+
+          // 모바일 터치/프레임 안정성을 위해 environment는 일단 비활성
+          // 필요하면 나중에 옵션으로 다시 켜도 됨
+          this.scene.environment = null;
 
           resolve(texture);
         },
@@ -243,7 +259,7 @@ export class Renderer {
           clearcoat: 0.06,
           clearcoatRoughness: 1.0,
           reflectivity: 0.15,
-          envMapIntensity: 0.35,
+          envMapIntensity: 0.0,
         })
       : new THREE.MeshPhysicalMaterial({
           color: 0x63a84a,
