@@ -5,12 +5,13 @@ import { PlacementController } from "./PlacementController.js";
 
 export class Game {
   constructor() {
-    this.config = {
-      stageSize: 5,
-      groundHeight: 0.5,
-      blockSize: 1,
-      previewClampPadding: 0.35,
-    };
+this.config = {
+  stageSize: 3,
+  groundHeight: 0.01,   // 스테이지 윗면 높이
+  stageThickness: 0.3, // 스테이지 두께
+  blockSize: 1,
+  previewClampPadding: 0.35,
+};
 
     // 배포 반영 확인용 버전 문자열
     // 푸시할 때 이 값만 바꿔도 화면에서 바로 확인 가능
@@ -57,43 +58,46 @@ export class Game {
     this.onActionButtonClick = this.onActionButtonClick.bind(this);
   }
 
-  async start() {
-    await this.physics.init();
+async start() {
+  // 🔥 추가 (배경 먼저 로드)
+  await this.renderer.init();
 
-    this.blockSystem = new BlockSystem(
-      this.renderer.scene,
-      this.physics,
-      () => this.handleFail(),
-      this.config
-    );
+  await this.physics.init();
 
-    await this.blockSystem.createBlock();
+  this.blockSystem = new BlockSystem(
+    this.renderer.scene,
+    this.physics,
+    () => this.handleFail(),
+    this.config
+  );
 
-    this.placementController = new PlacementController({
-      scene: this.renderer.scene,
-      camera: this.renderer.camera,
-      domElement: this.renderer.renderer.domElement,
-      controls: this.renderer.controls,
-      blockSystem: this.blockSystem,
-      blockSize: this.config.blockSize,
-      stageSize: this.config.stageSize,
-      previewClampPadding: this.config.previewClampPadding,
-      longPressDuration: 380,
-      moveThreshold: 8,
-      rotateSpeed: 0.012,
-    });
+  await this.blockSystem.createBlock();
 
-    this.updateNicknameUI();
-    this.updateHeightUI();
-    this.updateBestHeightUI();
-    this.updateVersionUI();
+  this.placementController = new PlacementController({
+    scene: this.renderer.scene,
+    camera: this.renderer.camera,
+    domElement: this.renderer.renderer.domElement,
+    controls: this.renderer.controls,
+    blockSystem: this.blockSystem,
+    blockSize: this.config.blockSize,
+    stageSize: this.config.stageSize,
+    previewClampPadding: this.config.previewClampPadding,
+    longPressDuration: 380,
+    moveThreshold: 8,
+    rotateSpeed: 0.012,
+  });
 
-    window.addEventListener("resize", this.onResize);
-    this.actionButton?.addEventListener("click", this.onActionButtonClick);
+  this.updateNicknameUI();
+  this.updateHeightUI();
+  this.updateBestHeightUI();
+  this.updateVersionUI();
 
-    this.updateControlButton();
-    this.animate(0);
-  }
+  window.addEventListener("resize", this.onResize);
+  this.actionButton?.addEventListener("click", this.onActionButtonClick);
+
+  this.updateControlButton();
+  this.animate(0);
+}
 
   updateNicknameUI() {
     if (this.nicknameLabel) {
