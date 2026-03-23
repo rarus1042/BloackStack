@@ -5,16 +5,10 @@ export class Renderer {
   constructor(options = {}) {
     this.stageSize = options.stageSize ?? 3;
     this.stageRadius = this.stageSize / 2;
-
-    // 스테이지 윗면 높이
     this.groundHeight = options.groundHeight ?? 0.12;
-
-    // 스테이지 두께
     this.stageThickness = options.stageThickness ?? 0.16;
 
     this.scene = new THREE.Scene();
-
-    // background 로딩 전 보험용 하늘색
     this.scene.background = new THREE.Color(0x87b8d8);
 
     this.camera = new THREE.PerspectiveCamera(
@@ -23,8 +17,7 @@ export class Renderer {
       0.1,
       1000
     );
-    this.camera.position.set(8, 7, 8);
-
+  this.camera.position.set(6.6, 5.1, 6.6);
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: false,
@@ -38,7 +31,6 @@ export class Renderer {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.autoClear = true;
 
-    // 캔버스가 화면 전체를 정확히 덮도록 강제
     const canvas = this.renderer.domElement;
     canvas.style.position = "fixed";
     canvas.style.left = "0";
@@ -62,7 +54,19 @@ export class Renderer {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
-    this.controls.target.set(0, this.groundHeight + 1.0, 0);
+
+this.defaultCameraPosition = new THREE.Vector3(6.6, 5.1, 6.6);
+this.defaultTarget = new THREE.Vector3(0, this.cameraMinTargetY, 0);
+this.controls.target.copy(this.defaultTarget);
+
+    this.cameraFollowLerp = options.cameraFollowLerp ?? 0.12;
+    this.cameraHeightOffset = options.cameraHeightOffset ?? 0.18;
+
+    this.cameraMinTargetY = options.cameraMinTargetY ?? 0.75;
+this.heightStep = options.heightStep ?? 0.5;
+
+// 마지막으로 카메라가 추적 승인한 높이
+this.trackedHeightStep = 0;
 
     this.groundMesh = null;
     this.rimMesh = null;
@@ -183,25 +187,51 @@ export class Renderer {
     this.scene.remove(object);
   }
 
-  render() {
-    this.controls.update();
+  quantizeHeightStep(height) {
+  const step = this.heightStep ?? 0.5;
+  if (step <= 0) return height;
 
-    // 혹시 다른 코드에서 scissor/viewport 건드렸어도 매 프레임 복구
+  return Math.floor(height / step) * step;
+}
+
+updateCamera(height = 0) {
+  const steppedHeight = this.quantizeHeightStep(height);
+
+  // 0.5 이상 높이 변화가 생겼을 때만 추적 목표 갱신
+  if (steppedHeight > this.trackedHeightStep) {
+    this.trackedHeightStep = steppedHeight;
+  }
+
+  const targetY = Math.max(
+    this.cameraMinTargetY,
+    this.trackedHeightStep + this.cameraHeightOffset
+  );
+
+  this.controls.target.y = THREE.MathUtils.lerp(
+    this.controls.target.y,
+    targetY,
+    this.cameraFollowLerp
+  );
+}
+
+resetCamera() {
+  this.trackedHeightStep = 0;
+  this.camera.position.copy(this.defaultCameraPosition);
+  this.controls.target.copy(this.defaultTarget);
+  this.controls.update();
+}
+
+  update() {
+    this.controls.update();
+  }
+
+  render() {
     const w = window.innerWidth;
     const h = window.innerHeight;
+
     this.renderer.setScissorTest(false);
     this.renderer.setViewport(0, 0, w, h);
-
     this.renderer.render(this.scene, this.camera);
-  }
-
-  updateCamera(height = 0) {
-    const targetY = Math.max(this.groundHeight + 1.0, height * 0.35 + this.groundHeight + 1.0);
-    this.controls.target.y += (targetY - this.controls.target.y) * 0.08;
-  }
-
-  updateCameraTarget(height = 0) {
-    this.updateCamera(height);
   }
 
   onResize() {
@@ -215,5 +245,9 @@ export class Renderer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setViewport(0, 0, w, h);
     this.renderer.setScissorTest(false);
+  }
+
+  resize() {
+    this.onResize();
   }
 }

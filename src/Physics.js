@@ -7,7 +7,7 @@ export class Physics {
     this.groundBody = null;
     this.groundCollider = null;
 
-    this.stageSize = options.stageSize ?? 5; // 지름
+    this.stageSize = options.stageSize ?? 5;
     this.stageRadius = this.stageSize / 2;
     this.groundHeight = options.groundHeight ?? 0.5;
   }
@@ -15,7 +15,8 @@ export class Physics {
   async init() {
     await this.RAPIER.init();
 
-    this.world = new this.RAPIER.World({ x: 0, y: 0, z: 0 });
+    // ✅ 글로벌 중력 복구
+    this.world = new this.RAPIER.World({ x: 0, y: -9.81, z: 0 });
 
     this.world.integrationParameters.dt = 1 / 60;
     this.world.integrationParameters.maxVelocityIterations = 12;
@@ -36,7 +37,6 @@ export class Physics {
       this.RAPIER.RigidBodyDesc.fixed().setTranslation(0, -halfGroundHeight, 0)
     );
 
-    // 원형 내부에 충분히 들어가는 바닥 충돌 영역
     const halfExtent = this.stageRadius * 0.98;
 
     const colDesc = this.RAPIER.ColliderDesc.cuboid(
@@ -44,7 +44,7 @@ export class Physics {
       halfGroundHeight,
       halfExtent
     )
-      .setFriction(2.0)
+      .setFriction(2.2)
       .setRestitution(0.0)
       .setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Max)
       .setRestitutionCombineRule(this.RAPIER.CoefficientCombineRule.Min);

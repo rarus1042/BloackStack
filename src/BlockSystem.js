@@ -10,6 +10,7 @@ export class BlockSystem {
     this.onFail = onFail;
 
     this.state = "IDLE";
+
     this.blocks = [];
     this.currentBlock = null;
     this.isSpawning = false;
@@ -17,29 +18,30 @@ export class BlockSystem {
     this.stageSize = options.stageSize ?? 5;
     this.blockSize = options.blockSize ?? 1;
     this.failY = options.failY ?? -3;
-    this.fallSpeed = options.fallSpeed ?? 0.9;
-    this.spawnClearance = options.spawnClearance ?? 2.2;
-    this.minSpawnHeight = options.minSpawnHeight ?? 4.2;
+    this.fallSpeed = options.fallSpeed ?? 2;
+
+    this.spawnClearance = options.spawnClearance ?? 1.2;
+    this.minSpawnHeight = options.minSpawnHeight ?? 1.8;
     this.previewClampPadding = options.previewClampPadding ?? 0.35;
 
     this.liveHeight = 0;
     this.stableHeight = 0;
-
+this.heightStep = 0.5; // ★ 추가 (중요)
     this.previewX = 0;
     this.previewY = 0;
     this.previewZ = 0;
-
     this.previewQuaternion = new THREE.Quaternion();
-    this.tempQuaternion = new THREE.Quaternion();
-    this.deltaQuaternion = new THREE.Quaternion();
+
     this.tempAxis = new THREE.Vector3();
+    this.deltaQuaternion = new THREE.Quaternion();
 
     this.waitingBlockId = 1;
     this.lastCommittedBlockId = 0;
 
     this.structureStableFrames = 0;
     this.structureStableFramesRequired =
-      options.structureStableFramesRequired ?? 36;
+      options.structureStableFramesRequired ?? 8;
+
     this.waitingPlacedCount = 0;
 
     this.factory = new BlockFactory(scene, physics, {
@@ -53,13 +55,17 @@ export class BlockSystem {
     this.monitor = new StructureMonitor({
       stageSize: this.stageSize,
       failY: this.failY,
-      fallSpeed: this.fallSpeed,
-      contactVerticalThreshold: 0.2,
-      contactHorizontalThreshold: 0.15,
-      contactFramesRequired: 3,
-      stableLinearThreshold: 0.05,
-      stableAngularThreshold: 0.05,
-      stableFramesRequired: 24,
+
+      contactVerticalThreshold: 0.28,
+      contactHorizontalThreshold: 0.22,
+      contactFramesRequired: 2,
+
+      landingMinFrames: 8,
+      landingStableFramesRequired: 12,
+      maxLandingYDelta: 0.03,
+
+      largeMoveLinearThreshold: 0.5,
+      largeMoveAngularThreshold: 0.5,
     });
 
     this.meshSync = new BlockMeshSync();
@@ -74,6 +80,7 @@ export class BlockSystem {
 
     try {
       const spawnY = this.getSpawnHeight();
+
       const block = await this.factory.createPreviewBlock(
         spawnY,
         this.waitingBlockId++
@@ -94,10 +101,20 @@ export class BlockSystem {
     }
   }
 
-  getSpawnHeight() {
-    return Math.max(this.stableHeight + this.spawnClearance, this.minSpawnHeight);
-  }
+quantizeHeightUp(height) {
+  const step = this.heightStep;
+  if (step <= 0) return height;
+  return Math.floor(height / step) * step;
+}
 
+getSpawnHeight() {
+  const steppedHeight = this.quantizeHeightUp(this.stableHeight);
+
+  return Math.max(
+    steppedHeight + this.spawnClearance,
+    this.minSpawnHeight
+  );
+}
   getCurrentPreviewBlock() {
     if (!this.currentBlock) return null;
     if (this.currentBlock.state !== "preview") return null;
@@ -106,140 +123,99 @@ export class BlockSystem {
 
   clampPreviewPosition(x, z) {
     const radius = Math.max(0, this.stageSize / 2 - this.previewClampPadding);
-    const length = Math.hypot(x, z);
+    const len = Math.hypot(x, z);
 
-    if (length <= radius || length === 0) {
-      return { x, z };
-    }
+    if (len <= radius || len === 0) return { x, z };
 
-    const scale = radius / length;
-    return {
-      x: x * scale,
-      z: z * scale,
-    };
-  }
-
-  getPreviewRotationQuaternion() {
-    return {
-      x: this.previewQuaternion.x,
-      y: this.previewQuaternion.y,
-      z: this.previewQuaternion.z,
-      w: this.previewQuaternion.w,
-    };
+    const s = radius / len;
+    return { x: x * s, z: z * s };
   }
 
   applyPreviewTransform() {
     if (!this.currentBlock || this.currentBlock.state !== "preview") return;
 
-    const translation = {
+    const t = {
       x: this.previewX,
       y: this.previewY,
       z: this.previewZ,
     };
 
-    const rotation = this.getPreviewRotationQuaternion();
-
-    if (typeof this.currentBlock.body.setTranslation === "function") {
-      this.currentBlock.body.setTranslation(translation, true);
-    }
-
-    if (typeof this.currentBlock.body.setRotation === "function") {
-      this.currentBlock.body.setRotation(rotation, true);
-    }
-
-    if (typeof this.currentBlock.body.setNextKinematicTranslation === "function") {
-      this.currentBlock.body.setNextKinematicTranslation(translation);
-    }
-
-    if (typeof this.currentBlock.body.setNextKinematicRotation === "function") {
-      this.currentBlock.body.setNextKinematicRotation(rotation);
-    }
+    this.currentBlock.body.setTranslation(t, true);
+    this.currentBlock.body.setRotation(this.previewQuaternion, true);
   }
 
   setPreviewPosition(x, z) {
     if (!this.currentBlock) return;
-    if (this.currentBlock.state !== "preview") return;
     if (this.state !== "EDIT") return;
 
-    const clamped = this.clampPreviewPosition(x, z);
+    const c = this.clampPreviewPosition(x, z);
 
-    this.previewX = clamped.x;
-    this.previewZ = clamped.z;
-
-    const current = this.currentBlock.body.translation();
-    this.previewY = current.y;
+    this.previewX = c.x;
+    this.previewZ = c.z;
+    this.previewY = this.currentBlock.body.translation().y;
 
     this.applyPreviewTransform();
   }
 
   enterRotateMode() {
-    if (!this.currentBlock) return false;
-    if (this.currentBlock.state !== "preview") return false;
     if (this.state !== "EDIT") return false;
-
     this.state = "ROTATE";
     return true;
   }
 
   exitRotateMode() {
-    if (!this.currentBlock) return false;
-    if (this.currentBlock.state !== "preview") return false;
     if (this.state !== "ROTATE") return false;
-
     this.state = "EDIT";
     return true;
   }
 
-  rotatePreviewByAxis(axis, deltaAngle) {
-    if (!this.currentBlock) return;
-    if (this.currentBlock.state !== "preview") return;
+  rotatePreviewByAxis(axis, angle) {
     if (this.state !== "ROTATE") return;
 
-    if (axis === "x") {
-      this.tempAxis.set(1, 0, 0);
-    } else if (axis === "y") {
-      this.tempAxis.set(0, 1, 0);
-    } else if (axis === "z") {
-      this.tempAxis.set(0, 0, 1);
-    } else {
-      return;
-    }
+    if (axis === "x") this.tempAxis.set(1, 0, 0);
+    else if (axis === "y") this.tempAxis.set(0, 1, 0);
+    else if (axis === "z") this.tempAxis.set(0, 0, 1);
+    else return;
 
     this.tempAxis.applyQuaternion(this.previewQuaternion).normalize();
-    this.deltaQuaternion.setFromAxisAngle(this.tempAxis, deltaAngle);
+    this.deltaQuaternion.setFromAxisAngle(this.tempAxis, angle);
 
-    this.previewQuaternion.copy(
-      this.deltaQuaternion.multiply(this.previewQuaternion)
-    ).normalize();
+    this.previewQuaternion
+      .copy(this.deltaQuaternion.multiply(this.previewQuaternion))
+      .normalize();
 
     this.applyPreviewTransform();
   }
 
   confirmCurrentBlock() {
     if (!this.currentBlock) return false;
-    if (this.currentBlock.state !== "preview") return false;
     if (this.state !== "EDIT" && this.state !== "ROTATE") return false;
 
-    this.factory.convertPreviewToDynamic(this.currentBlock);
+    const block = this.currentBlock;
 
-    this.structureStableFrames = 0;
-    this.waitingPlacedCount = this.monitor.getPlacedBlockCount(this.blocks);
+    this.factory.convertPreviewToDynamic(block);
+
+    block.committed = true;
+    this.lastCommittedBlockId = block.id;
 
     this.currentBlock = null;
+
     this.state = "WAITING";
+    this.structureStableFrames = 0;
+    this.waitingPlacedCount = this.monitor.getPlacedBlockCount(this.blocks);
 
     return true;
   }
 
   updateHeights() {
     this.liveHeight = this.monitor.computeHeight(this.blocks, false);
+    this.stableHeight = this.monitor.computeSettledHeight(this.blocks);
   }
 
   tryCommitStableStructure() {
     if (this.state !== "WAITING") return;
 
     const placedCount = this.monitor.getPlacedBlockCount(this.blocks);
-
     if (placedCount !== this.waitingPlacedCount) {
       this.waitingPlacedCount = placedCount;
       this.structureStableFrames = 0;
@@ -253,31 +229,27 @@ export class BlockSystem {
       return;
     }
 
-    this.structureStableFrames += 1;
+    this.structureStableFrames++;
 
     if (this.structureStableFrames < this.structureStableFramesRequired) {
       return;
     }
 
-    this.stableHeight = this.monitor.computeHeight(this.blocks, false);
     this.lastCommittedBlockId = this.waitingBlockId - 1;
 
-    for (const block of this.blocks) {
-      if (block.state !== "preview") {
-        block.committed = true;
+    for (const b of this.blocks) {
+      if (b.state !== "preview") {
+        b.committed = true;
       }
     }
 
     this.structureStableFrames = 0;
-    this.waitingPlacedCount = 0;
     this.state = "IDLE";
   }
 
   maybeSpawnNextBlock() {
     if (this.state !== "IDLE") return;
     if (this.currentBlock) return;
-    if (this.isSpawning) return;
-
     this.createBlock();
   }
 
@@ -294,21 +266,17 @@ export class BlockSystem {
   }
 
   reset() {
-    for (const block of this.blocks) {
-      this.factory.disposeBlock(block);
+    for (const b of this.blocks) {
+      this.factory.disposeBlock(b);
     }
 
     this.blocks = [];
     this.currentBlock = null;
     this.state = "IDLE";
-    this.isSpawning = false;
 
     this.liveHeight = 0;
     this.stableHeight = 0;
 
-    this.previewX = 0;
-    this.previewY = 0;
-    this.previewZ = 0;
     this.previewQuaternion.identity();
 
     this.waitingBlockId = 1;

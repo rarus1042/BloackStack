@@ -206,7 +206,9 @@ export class BlockFactory {
       .setAngularDamping(this.angularDamping);
 
     const body = this.world.createRigidBody(rbDesc);
-    body.setGravityScale(0, true);
+
+    // ✅ 글로벌 중력 사용
+    body.setGravityScale(1, true);
 
     if (typeof body.enableCcd === "function") {
       body.enableCcd(true);
@@ -218,7 +220,7 @@ export class BlockFactory {
     }
 
     colliderDesc
-      .setFriction(2.0)
+      .setFriction(2.2)
       .setRestitution(0.0)
       .setDensity(1.0)
       .setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Max)
@@ -226,6 +228,7 @@ export class BlockFactory {
 
     const collider = this.world.createCollider(colliderDesc, body);
 
+    // ✅ 초기 속도만 한번 부여
     body.setLinvel({ x: 0, y: -this.fallSpeed, z: 0 }, true);
     body.setAngvel({ x: 0, y: 0, z: 0 }, true);
 
@@ -254,6 +257,8 @@ export class BlockFactory {
       modelPath,
       contactFrames: 0,
       stableFrames: 0,
+      landingFrames: 0,
+      landingStartY: null,
       committed: false,
     };
   }
@@ -271,6 +276,8 @@ export class BlockFactory {
     block.state = "falling";
     block.contactFrames = 0;
     block.stableFrames = 0;
+    block.landingFrames = 0;
+    block.landingStartY = null;
     block.committed = false;
 
     return block;

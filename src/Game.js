@@ -7,15 +7,27 @@ export class Game {
   constructor() {
 this.config = {
   stageSize: 3,
-  groundHeight: 0.01,   // 스테이지 윗면 높이
-  stageThickness: 0.3, // 스테이지 두께
+  groundHeight: 0.01,
+  stageThickness: 0.12,
   blockSize: 1,
   previewClampPadding: 0.35,
+
+  fallSpeed: 2,
+
+  // 시작 스폰 높이 조금 더 높게
+  spawnClearance: 1.6,
+  minSpawnHeight: 2.3,
+
+  // 0.5 단위 계단 반영
+  heightStep: 0.5,
+
+  // 카메라
+  cameraFollowLerp: 0.12,
+  cameraHeightOffset: 0.25,
+  cameraMinTargetY: 0.75,
 };
 
-    // 배포 반영 확인용 버전 문자열
-    // 푸시할 때 이 값만 바꿔도 화면에서 바로 확인 가능
-    this.appVersion = "v0.1.10-version-label";
+    this.appVersion = "v0.1.12-spawn-camera-baseline-fix";
 
     this.renderer = new Renderer(this.config);
     this.physics = new Physics(this.config);
@@ -26,6 +38,7 @@ this.config = {
     this.nickname = "Player";
     this.bestHeight = 0;
     this.lastTime = 0;
+   this.heightStep = this.config.heightStep ?? 0.5;
     this.isGameOver = false;
     this.isRestarting = false;
 
@@ -58,46 +71,44 @@ this.config = {
     this.onActionButtonClick = this.onActionButtonClick.bind(this);
   }
 
-async start() {
-  // 🔥 추가 (배경 먼저 로드)
-  await this.renderer.init();
+  async start() {
+    await this.renderer.init();
+    await this.physics.init();
 
-  await this.physics.init();
+    this.blockSystem = new BlockSystem(
+      this.renderer.scene,
+      this.physics,
+      () => this.handleFail(),
+      this.config
+    );
 
-  this.blockSystem = new BlockSystem(
-    this.renderer.scene,
-    this.physics,
-    () => this.handleFail(),
-    this.config
-  );
+    await this.blockSystem.createBlock();
 
-  await this.blockSystem.createBlock();
+    this.placementController = new PlacementController({
+      scene: this.renderer.scene,
+      camera: this.renderer.camera,
+      domElement: this.renderer.renderer.domElement,
+      controls: this.renderer.controls,
+      blockSystem: this.blockSystem,
+      blockSize: this.config.blockSize,
+      stageSize: this.config.stageSize,
+      previewClampPadding: this.config.previewClampPadding,
+      longPressDuration: 380,
+      moveThreshold: 8,
+      rotateSpeed: 0.012,
+    });
 
-  this.placementController = new PlacementController({
-    scene: this.renderer.scene,
-    camera: this.renderer.camera,
-    domElement: this.renderer.renderer.domElement,
-    controls: this.renderer.controls,
-    blockSystem: this.blockSystem,
-    blockSize: this.config.blockSize,
-    stageSize: this.config.stageSize,
-    previewClampPadding: this.config.previewClampPadding,
-    longPressDuration: 380,
-    moveThreshold: 8,
-    rotateSpeed: 0.012,
-  });
+    this.updateNicknameUI();
+    this.updateHeightUI();
+    this.updateBestHeightUI();
+    this.updateVersionUI();
 
-  this.updateNicknameUI();
-  this.updateHeightUI();
-  this.updateBestHeightUI();
-  this.updateVersionUI();
+    window.addEventListener("resize", this.onResize);
+    this.actionButton?.addEventListener("click", this.onActionButtonClick);
 
-  window.addEventListener("resize", this.onResize);
-  this.actionButton?.addEventListener("click", this.onActionButtonClick);
-
-  this.updateControlButton();
-  this.animate(0);
-}
+    this.updateControlButton();
+    this.animate(0);
+  }
 
   updateNicknameUI() {
     if (this.nicknameLabel) {
@@ -121,33 +132,37 @@ async start() {
     this.versionLabel.textContent = `버전: ${this.appVersion}`;
   }
 
-  updateControlButton() {
-    if (!this.actionButton || !this.blockSystem) return;
+updateControlButton() {
+  if (!this.actionButton || !this.blockSystem) return;
 
-    if (this.isGameOver || this.isRestarting) {
-      this.actionButton.disabled = true;
-      this.actionButton.textContent = "대기중";
-      this.actionButton.style.opacity = "0.5";
-      return;
-    }
-
-    const state = this.blockSystem.state;
-
-    if (state === "EDIT" || state === "ROTATE") {
-      this.actionButton.disabled = false;
-      this.actionButton.textContent = "배치";
-      this.actionButton.style.opacity = "1";
-    } else if (state === "WAITING") {
-      this.actionButton.disabled = true;
-      this.actionButton.textContent = "안정화 중";
-      this.actionButton.style.opacity = "0.5";
-    } else {
-      this.actionButton.disabled = true;
-      this.actionButton.textContent = "대기중";
-      this.actionButton.style.opacity = "0.5";
-    }
+  if (this.isGameOver || this.isRestarting) {
+    this.actionButton.disabled = true;
+    this.actionButton.textContent = "대기중";
+    this.actionButton.style.opacity = "0.5";
+    return;
   }
 
+  const state = this.blockSystem.state;
+
+  if (state === "EDIT" || state === "ROTATE") {
+    this.actionButton.disabled = false;
+    this.actionButton.textContent = "배치";
+    this.actionButton.style.opacity = "1";
+    return;
+  }
+
+  if (state === "WAITING") {
+    const hasLanding = this.blockSystem.blocks.some((b) => b.state === "landing");
+    this.actionButton.disabled = true;
+    this.actionButton.textContent = hasLanding ? "착지중" : "안정화중";
+    this.actionButton.style.opacity = "0.5";
+    return;
+  }
+
+  this.actionButton.disabled = true;
+  this.actionButton.textContent = "대기중";
+  this.actionButton.style.opacity = "0.5";
+}
   onActionButtonClick() {
     if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
 
@@ -223,8 +238,8 @@ async start() {
       this.physics.step();
       this.blockSystem.update();
 
-      const cameraHeight = this.blockSystem.getStableHeight();
-      this.renderer.updateCamera(cameraHeight);
+      const followHeight = this.blockSystem.getMaxHeight();
+      this.renderer.updateCamera(followHeight);
 
       this.updateHeightUI();
       this.updateControlButton();
