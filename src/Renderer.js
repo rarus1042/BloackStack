@@ -71,20 +71,20 @@ export class Renderer {
     this.rimMesh = null;
     this.backgroundTexture = null;
     this.grassTexture = null;
+    this.grassNormal = null;
 
     this.setupLights();
     this.setupFog();
     this.setupStage();
+
+    window.addEventListener("resize", () => this.onResize());
   }
 
   async init() {
-await Promise.allSettled([
-  this.loadSkyBackground("./assets/sky_36_2k.png"),
-  this.loadGrassTexture(
-    "./assets/grass.png",
-    "./assets/grass_normal.png"
-  ),
-]);
+    await Promise.allSettled([
+      this.loadSkyBackground("./assets/sky_36_2k.png"),
+      this.loadGrassTexture("./assets/grass.png", "./assets/grass_normal.png"),
+    ]);
 
     this.setupStage();
     this.onResize();
@@ -105,6 +105,7 @@ await Promise.allSettled([
 
           this.backgroundTexture = texture;
           this.scene.background = texture;
+          this.scene.environment = texture;
 
           resolve(texture);
         },
@@ -116,54 +117,72 @@ await Promise.allSettled([
       );
     });
   }
-async loadGrassTexture(path, normalPath) {
-  const loader = new THREE.TextureLoader();
 
-  return new Promise((resolve, reject) => {
-    loader.load(
-      path,
-      (colorTex) => {
-        colorTex.encoding = THREE.sRGBEncoding;
-        colorTex.wrapS = THREE.RepeatWrapping;
-        colorTex.wrapT = THREE.RepeatWrapping;
+  async loadGrassTexture(colorPath, normalPath) {
+    const loader = new THREE.TextureLoader();
 
-        const repeat = Math.max(2, Math.round(this.stageSize * 1.5));
-        colorTex.repeat.set(repeat, repeat);
+    return new Promise((resolve, reject) => {
+      loader.load(
+        colorPath,
+        (colorTex) => {
+          colorTex.encoding = THREE.sRGBEncoding;
+          colorTex.wrapS = THREE.RepeatWrapping;
+          colorTex.wrapT = THREE.RepeatWrapping;
 
-        loader.load(
-          normalPath,
-          (normalTex) => {
-            normalTex.wrapS = THREE.RepeatWrapping;
-            normalTex.wrapT = THREE.RepeatWrapping;
-            normalTex.repeat.copy(colorTex.repeat);
+          const repeat = Math.max(10, Math.round(this.stageSize * 4));
+          colorTex.repeat.set(repeat, repeat);
 
-            this.grassTexture = colorTex;
-            this.grassNormal = normalTex;
+          const maxAnisotropy = this.renderer.capabilities.getMaxAnisotropy
+            ? this.renderer.capabilities.getMaxAnisotropy()
+            : 1;
 
-            resolve();
-          },
-          undefined,
-          () => {
-            console.warn("Normal map load failed");
-            this.grassTexture = colorTex;
-            resolve();
-          }
-        );
-      },
-      undefined,
-      reject
-    );
-  });
-}
+          colorTex.anisotropy = Math.min(16, maxAnisotropy);
+          colorTex.needsUpdate = true;
+
+          loader.load(
+            normalPath,
+            (normalTex) => {
+              normalTex.wrapS = THREE.RepeatWrapping;
+              normalTex.wrapT = THREE.RepeatWrapping;
+              normalTex.repeat.copy(colorTex.repeat);
+              normalTex.anisotropy = colorTex.anisotropy;
+              normalTex.needsUpdate = true;
+
+              this.grassTexture = colorTex;
+              this.grassNormal = normalTex;
+              resolve();
+            },
+            undefined,
+            (error) => {
+              console.warn("Grass normal load failed:", error);
+              this.grassTexture = colorTex;
+              this.grassNormal = null;
+              resolve();
+            }
+          );
+        },
+        undefined,
+        (error) => {
+          console.warn("Grass color load failed:", error);
+          reject(error);
+        }
+      );
+    });
+  }
+
   setupFog() {
     this.scene.fog = new THREE.Fog(0x9fc6e3, 45, 120);
   }
 
   setupLights() {
-    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.72);
     this.scene.add(this.ambientLight);
 
-    this.directionalLight = new THREE.DirectionalLight(0xffffff, 1.05);
+    this.hemiLight = new THREE.HemisphereLight(0xdff3ff, 0x7ca05a, 0.68);
+    this.hemiLight.position.set(0, 20, 0);
+    this.scene.add(this.hemiLight);
+
+    this.directionalLight = new THREE.DirectionalLight(0xffffff, 1.45);
     this.directionalLight.position.set(8, 14, 10);
     this.directionalLight.castShadow = true;
 
@@ -175,6 +194,7 @@ async loadGrassTexture(path, normalPath) {
     this.directionalLight.shadow.camera.right = 15;
     this.directionalLight.shadow.camera.top = 15;
     this.directionalLight.shadow.camera.bottom = -15;
+    this.directionalLight.shadow.bias = -0.00015;
 
     this.scene.add(this.directionalLight);
   }
@@ -205,7 +225,7 @@ async loadGrassTexture(path, normalPath) {
       this.rimMesh = null;
     }
 
-    const groundGeometry = new THREE.CylinderGeometry(radius, radius, thickness, 64);
+    const groundGeometry = new THREE.CylinderGeometry(radius, radius, thickness, 96);
 
     const sideMaterial = new THREE.MeshStandardMaterial({
       color: 0x6c8f45,
@@ -213,19 +233,27 @@ async loadGrassTexture(path, normalPath) {
       metalness: 0.0,
     });
 
-const topMaterial = this.grassTexture
-  ? new THREE.MeshStandardMaterial({
-      map: this.grassTexture,
-      normalMap: this.grassNormal,   // ⭐ 핵심
-      normalScale: new THREE.Vector2(0.8, 0.8), // 강도 조절
-      roughness: 1.0,
-      metalness: 0.0,
-    })
-  : new THREE.MeshStandardMaterial({
-      color: 0x63a84a,
-      roughness: 1.0,
-      metalness: 0.0,
-    });
+    const topMaterial = this.grassTexture
+      ? new THREE.MeshPhysicalMaterial({
+          map: this.grassTexture,
+          normalMap: this.grassNormal || null,
+          normalScale: new THREE.Vector2(2.6, 2.6),
+          roughness: 0.92,
+          metalness: 0.0,
+          clearcoat: 0.06,
+          clearcoatRoughness: 1.0,
+          reflectivity: 0.15,
+          envMapIntensity: 0.35,
+        })
+      : new THREE.MeshPhysicalMaterial({
+          color: 0x63a84a,
+          roughness: 0.95,
+          metalness: 0.0,
+          clearcoat: 0.04,
+          clearcoatRoughness: 1.0,
+          reflectivity: 0.1,
+        });
+
     const bottomMaterial = new THREE.MeshStandardMaterial({
       color: 0x5b6a4a,
       roughness: 0.98,
@@ -243,11 +271,11 @@ const topMaterial = this.grassTexture
     this.groundMesh.castShadow = false;
     this.scene.add(this.groundMesh);
 
-    const rimGeometry = new THREE.TorusGeometry(radius, 0.025, 16, 100);
+    const rimGeometry = new THREE.TorusGeometry(radius, 0.025, 20, 120);
     const rimMaterial = new THREE.MeshStandardMaterial({
-      color: 0xd8e0d2,
-      roughness: 0.82,
-      metalness: 0.03,
+      color: 0xf2f5ea,
+      roughness: 0.72,
+      metalness: 0.02,
     });
 
     this.rimMesh = new THREE.Mesh(rimGeometry, rimMaterial);

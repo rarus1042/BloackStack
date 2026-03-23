@@ -5,29 +5,29 @@ import { PlacementController } from "./PlacementController.js";
 
 export class Game {
   constructor() {
-this.config = {
-  stageSize: 3,
-  groundHeight: 0.01,
-  stageThickness: 0.12,
-  blockSize: 1,
-  previewClampPadding: 0.35,
+    this.config = {
+      stageSize: 3,
+      groundHeight: 0.01,
+      stageThickness: 0.12,
+      blockSize: 1,
+      previewClampPadding: 0.35,
 
-  fallSpeed: 2,
+      fallSpeed: 2,
 
-  // 시작 스폰 높이 조금 더 높게
-  spawnClearance: 1.6,
-  minSpawnHeight: 2.3,
+      // 시작 스폰 높이 조금 더 높게
+      spawnClearance: 1.6,
+      minSpawnHeight: 2.3,
 
-  // 0.5 단위 계단 반영
-  heightStep: 0.5,
+      // 0.5 단위 계단 반영
+      heightStep: 0.5,
 
-  // 카메라
-  cameraFollowLerp: 0.12,
-  cameraHeightOffset: 0.25,
-  cameraMinTargetY: 0.75,
-};
+      // 카메라
+      cameraFollowLerp: 0.12,
+      cameraHeightOffset: 0.25,
+      cameraMinTargetY: 0.75,
+    };
 
-    this.appVersion = "v0.1.12-spawn-camera-baseline-fix";
+    this.appVersion = "v0.1.13-bgm-toggle";
 
     this.renderer = new Renderer(this.config);
     this.physics = new Physics(this.config);
@@ -38,7 +38,7 @@ this.config = {
     this.nickname = "Player";
     this.bestHeight = 0;
     this.lastTime = 0;
-   this.heightStep = this.config.heightStep ?? 0.5;
+    this.heightStep = this.config.heightStep ?? 0.5;
     this.isGameOver = false;
     this.isRestarting = false;
 
@@ -66,9 +66,24 @@ this.config = {
       this.heightLabel.parentElement.appendChild(this.versionLabel);
     }
 
+    // BGM
+    this.bgmEnabled = true;
+    this.bgmUnlocked = false;
+    this.bgm = new Audio("./assets/bgm.mp3");
+    this.bgm.loop = true;
+    this.bgm.volume = 0.4;
+    this.bgm.preload = "auto";
+
+    this.bgmToggleButton = null;
+
     this.animate = this.animate.bind(this);
     this.onResize = this.onResize.bind(this);
     this.onActionButtonClick = this.onActionButtonClick.bind(this);
+    this.onBgmToggleClick = this.onBgmToggleClick.bind(this);
+    this.unlockBgm = this.unlockBgm.bind(this);
+
+    this.createBgmToggleButton();
+    this.setupBgmUnlock();
   }
 
   async start() {
@@ -102,12 +117,102 @@ this.config = {
     this.updateHeightUI();
     this.updateBestHeightUI();
     this.updateVersionUI();
+    this.updateBgmButtonUI();
 
     window.addEventListener("resize", this.onResize);
     this.actionButton?.addEventListener("click", this.onActionButtonClick);
 
     this.updateControlButton();
     this.animate(0);
+  }
+
+  createBgmToggleButton() {
+    let button = document.getElementById("bgmToggleButton");
+
+    if (!button) {
+      button = document.createElement("button");
+      button.id = "bgmToggleButton";
+      button.type = "button";
+      button.style.position = "fixed";
+      button.style.top = "16px";
+      button.style.right = "16px";
+      button.style.zIndex = "20";
+      button.style.padding = "10px 14px";
+      button.style.border = "0";
+      button.style.borderRadius = "12px";
+      button.style.background = "rgba(0,0,0,0.55)";
+      button.style.color = "#fff";
+      button.style.fontSize = "14px";
+      button.style.fontWeight = "600";
+      button.style.cursor = "pointer";
+      button.style.backdropFilter = "blur(6px)";
+      button.style.boxShadow = "0 6px 18px rgba(0,0,0,0.18)";
+      button.style.userSelect = "none";
+      button.style.webkitUserSelect = "none";
+      document.body.appendChild(button);
+    }
+
+    this.bgmToggleButton = button;
+    this.bgmToggleButton.addEventListener("click", this.onBgmToggleClick);
+    this.updateBgmButtonUI();
+  }
+
+  updateBgmButtonUI() {
+    if (!this.bgmToggleButton) return;
+
+    this.bgmToggleButton.textContent = this.bgmEnabled ? "BGM ON" : "BGM OFF";
+    this.bgmToggleButton.style.opacity = this.bgmEnabled ? "1" : "0.7";
+  }
+
+  setupBgmUnlock() {
+    window.addEventListener("pointerdown", this.unlockBgm, { passive: true });
+    window.addEventListener("touchstart", this.unlockBgm, { passive: true });
+    window.addEventListener("keydown", this.unlockBgm, { passive: true });
+  }
+
+  removeBgmUnlockListeners() {
+    window.removeEventListener("pointerdown", this.unlockBgm);
+    window.removeEventListener("touchstart", this.unlockBgm);
+    window.removeEventListener("keydown", this.unlockBgm);
+  }
+
+  async unlockBgm() {
+    if (this.bgmUnlocked) return;
+
+    this.bgmUnlocked = true;
+    this.removeBgmUnlockListeners();
+
+    if (this.bgmEnabled) {
+      await this.playBgm();
+    }
+  }
+
+  async playBgm() {
+    if (!this.bgm || !this.bgmEnabled) return;
+
+    try {
+      await this.bgm.play();
+    } catch (error) {
+      console.warn("BGM play blocked:", error);
+    }
+  }
+
+  pauseBgm() {
+    if (!this.bgm) return;
+    this.bgm.pause();
+  }
+
+  async onBgmToggleClick() {
+    this.bgmEnabled = !this.bgmEnabled;
+    this.updateBgmButtonUI();
+
+    if (this.bgmEnabled) {
+      if (this.bgmUnlocked) {
+        await this.playBgm();
+      }
+    } else {
+      this.pauseBgm();
+    }
   }
 
   updateNicknameUI() {
@@ -132,37 +237,38 @@ this.config = {
     this.versionLabel.textContent = `버전: ${this.appVersion}`;
   }
 
-updateControlButton() {
-  if (!this.actionButton || !this.blockSystem) return;
+  updateControlButton() {
+    if (!this.actionButton || !this.blockSystem) return;
 
-  if (this.isGameOver || this.isRestarting) {
+    if (this.isGameOver || this.isRestarting) {
+      this.actionButton.disabled = true;
+      this.actionButton.textContent = "대기중";
+      this.actionButton.style.opacity = "0.5";
+      return;
+    }
+
+    const state = this.blockSystem.state;
+
+    if (state === "EDIT" || state === "ROTATE") {
+      this.actionButton.disabled = false;
+      this.actionButton.textContent = "배치";
+      this.actionButton.style.opacity = "1";
+      return;
+    }
+
+    if (state === "WAITING") {
+      const hasLanding = this.blockSystem.blocks.some((b) => b.state === "landing");
+      this.actionButton.disabled = true;
+      this.actionButton.textContent = hasLanding ? "착지중" : "안정화중";
+      this.actionButton.style.opacity = "0.5";
+      return;
+    }
+
     this.actionButton.disabled = true;
     this.actionButton.textContent = "대기중";
     this.actionButton.style.opacity = "0.5";
-    return;
   }
 
-  const state = this.blockSystem.state;
-
-  if (state === "EDIT" || state === "ROTATE") {
-    this.actionButton.disabled = false;
-    this.actionButton.textContent = "배치";
-    this.actionButton.style.opacity = "1";
-    return;
-  }
-
-  if (state === "WAITING") {
-    const hasLanding = this.blockSystem.blocks.some((b) => b.state === "landing");
-    this.actionButton.disabled = true;
-    this.actionButton.textContent = hasLanding ? "착지중" : "안정화중";
-    this.actionButton.style.opacity = "0.5";
-    return;
-  }
-
-  this.actionButton.disabled = true;
-  this.actionButton.textContent = "대기중";
-  this.actionButton.style.opacity = "0.5";
-}
   onActionButtonClick() {
     if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
 
