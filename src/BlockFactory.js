@@ -26,46 +26,80 @@ export class BlockFactory {
     this.collisionCache = new Map();
   }
 
-  normalizeModelEntry(entry) {
-    if (typeof entry === "string") {
-      const trimmed = entry.trim();
-      if (!trimmed) return null;
+ normalizeModelEntry(entry) {
+  if (typeof entry === "string") {
+    const trimmed = entry.trim();
+    if (!trimmed) return null;
 
-      return {
-        path: `models/${trimmed}`,
-        scaleFactor: 1.0,
-      };
-    }
-
-    if (entry && typeof entry === "object") {
-      const file =
-        typeof entry.file === "string"
-          ? entry.file.trim()
-          : typeof entry.name === "string"
-          ? entry.name.trim()
-          : "";
-
-      if (!file) return null;
-
-      let scaleFactor =
-        typeof entry.scaleFactor === "number"
-          ? entry.scaleFactor
-          : typeof entry.scale === "number"
-          ? entry.scale
-          : 1.0;
-
-      if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
-        scaleFactor = 1.0;
-      }
-
-      return {
-        path: `models/${file}`,
-        scaleFactor,
-      };
-    }
-
-    return null;
+    return {
+      path: `models/${trimmed}`,
+      scaleFactor: 1.0,
+      weight: 50, // 기본값
+    };
   }
+
+  if (entry && typeof entry === "object") {
+    const file =
+      typeof entry.file === "string"
+        ? entry.file.trim()
+        : typeof entry.name === "string"
+        ? entry.name.trim()
+        : "";
+
+    if (!file) return null;
+
+    let scaleFactor =
+      typeof entry.scaleFactor === "number"
+        ? entry.scaleFactor
+        : typeof entry.scale === "number"
+        ? entry.scale
+        : 1.0;
+
+    if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
+      scaleFactor = 1.0;
+    }
+
+    let weight =
+      typeof entry.weight === "number"
+        ? Math.round(entry.weight)
+        : 50;
+
+    // 🔥 1~100 강제 제한
+    weight = Math.max(1, Math.min(100, weight));
+
+    return {
+      path: `models/${file}`,
+      scaleFactor,
+      weight,
+    };
+  }
+
+  return null;
+}
+
+getWeightedRandomEntry() {
+  if (!this.modelEntries.length) {
+    throw new Error("BlockFactory: modelEntries is empty.");
+  }
+
+  let totalWeight = 0;
+
+  for (const entry of this.modelEntries) {
+    totalWeight += entry.weight;
+  }
+
+  // 🔥 정수 기반 랜덤
+  let r = Math.floor(Math.random() * totalWeight) + 1;
+
+  for (const entry of this.modelEntries) {
+    r -= entry.weight;
+    if (r <= 0) {
+      return entry;
+    }
+  }
+
+  return this.modelEntries[this.modelEntries.length - 1];
+}
 
   async ensureModelListLoaded() {
     if (this.modelListLoaded) return;
@@ -93,14 +127,9 @@ export class BlockFactory {
     }
   }
 
-  getRandomModelEntry() {
-    if (!this.modelEntries.length) {
-      throw new Error("BlockFactory: modelEntries is empty.");
-    }
-
-    const index = Math.floor(Math.random() * this.modelEntries.length);
-    return this.modelEntries[index];
-  }
+getRandomModelEntry() {
+  return this.getWeightedRandomEntry();
+}
 
   async loadModel(modelPath) {
     if (this.modelCache.has(modelPath)) {

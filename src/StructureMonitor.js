@@ -14,6 +14,9 @@ export class StructureMonitor {
     this.landingStableFramesRequired = options.landingStableFramesRequired ?? 4;
     this.maxLandingYDelta = options.maxLandingYDelta ?? 0.02;
 
+    // landing 최대 지속 시간 (초)
+    this.maxLandingTime = options.maxLandingTime ?? 5.0;
+
     // 크게 흔들리면 다시 falling
     this.largeMoveLinearThreshold = options.largeMoveLinearThreshold ?? 0.9;
     this.largeMoveAngularThreshold = options.largeMoveAngularThreshold ?? 0.9;
@@ -35,6 +38,7 @@ export class StructureMonitor {
     block.landingFrames = 0;
     block.stableFrames = 0;
     block.landingStartY = null;
+    block.landingStartTime = null;
     block.jitterFrames = 0;
     block.prevPosForJitter = null;
 
@@ -46,7 +50,20 @@ export class StructureMonitor {
     }
   }
 
+  resetToFalling(block) {
+    block.state = "falling";
+    block.contactFrames = 0;
+    block.landingFrames = 0;
+    block.stableFrames = 0;
+    block.landingStartY = null;
+    block.landingStartTime = null;
+    block.jitterFrames = 0;
+    block.prevPosForJitter = null;
+  }
+
   updateDynamicBlocks(blocks) {
+    const now = performance.now();
+
     for (const block of blocks) {
       if (
         block.state !== "falling" &&
@@ -79,6 +96,7 @@ export class StructureMonitor {
           block.stableFrames = 0;
           block.jitterFrames = 0;
           block.landingStartY = currentY;
+          block.landingStartTime = now;
           block.prevPosForJitter = { x: pos.x, y: pos.y, z: pos.z };
 
           block.body.setLinvel(
@@ -106,7 +124,7 @@ export class StructureMonitor {
       if (block.state === "landing") {
         block.landingFrames = (block.landingFrames ?? 0) + 1;
 
-        // 착지 중은 강하게 감쇠
+        // 착지 중 감쇠
         block.body.setLinvel(
           {
             x: lv.x * 0.82,
@@ -140,7 +158,7 @@ export class StructureMonitor {
           }
         }
 
-        // 제자리 떨림 반복 감지
+        // 제자리 떨림 감지
         const prev = block.prevPosForJitter ?? { x: pos.x, y: pos.y, z: pos.z };
         const posDelta = Math.hypot(pos.x - prev.x, pos.z - prev.z);
         const yPosDelta = Math.abs(pos.y - prev.y);
@@ -161,15 +179,12 @@ export class StructureMonitor {
           angularSpeed > this.largeMoveAngularThreshold;
 
         if (movedLarge) {
-          block.state = "falling";
-          block.contactFrames = 0;
-          block.landingFrames = 0;
-          block.stableFrames = 0;
-          block.jitterFrames = 0;
-          block.landingStartY = null;
-          block.prevPosForJitter = null;
+          this.resetToFalling(block);
           continue;
         }
+
+        const landingElapsedSec =
+          (now - (block.landingStartTime ?? now)) / 1000;
 
         if (block.stableFrames >= this.landingStableFramesRequired) {
           this.forceSettle(block);
@@ -177,6 +192,11 @@ export class StructureMonitor {
         }
 
         if ((block.jitterFrames ?? 0) >= this.jitterFramesRequired) {
+          this.forceSettle(block);
+          continue;
+        }
+
+        if (landingElapsedSec >= this.maxLandingTime) {
           this.forceSettle(block);
           continue;
         }
@@ -190,13 +210,7 @@ export class StructureMonitor {
           angularSpeed > this.largeMoveAngularThreshold;
 
         if (movedLarge) {
-          block.state = "falling";
-          block.contactFrames = 0;
-          block.landingFrames = 0;
-          block.stableFrames = 0;
-          block.jitterFrames = 0;
-          block.landingStartY = null;
-          block.prevPosForJitter = null;
+          this.resetToFalling(block);
         }
       }
     }

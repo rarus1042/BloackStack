@@ -500,14 +500,12 @@ export class Game {
       return;
     }
 
-    if (state === "WAITING") {
-      const hasLanding = this.blockSystem.blocks.some((b) => b.state === "landing");
-      this.actionButton.disabled = true;
-      this.actionButton.textContent = hasLanding ? "착지중" : "안정화중";
-      this.actionButton.style.opacity = "0.5";
-      return;
-    }
-
+if (state === "WAITING") {
+  this.actionButton.disabled = true;
+  this.actionButton.textContent = "착지중";
+  this.actionButton.style.opacity = "0.5";
+  return;
+}
     this.actionButton.disabled = true;
     this.actionButton.textContent = "대기중";
     this.actionButton.style.opacity = "0.5";

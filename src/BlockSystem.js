@@ -20,8 +20,8 @@ export class BlockSystem {
     this.failY = options.failY ?? -3;
     this.fallSpeed = options.fallSpeed ?? 2;
 
-    this.spawnClearance = options.spawnClearance ?? 1.2;
-    this.minSpawnHeight = options.minSpawnHeight ?? 1.8;
+    this.spawnClearance = options.spawnClearance ?? 1.6;
+    this.minSpawnHeight = options.minSpawnHeight ?? 2.3;
     this.previewClampPadding = options.previewClampPadding ?? 0.35;
 
     this.liveHeight = 0;
@@ -58,6 +58,7 @@ export class BlockSystem {
       landingMinFrames: 4,
       landingStableFramesRequired: 4,
       maxLandingYDelta: 0.02,
+      maxLandingTime: 5.0,
 
       largeMoveLinearThreshold: 0.9,
       largeMoveAngularThreshold: 0.9,
@@ -254,6 +255,9 @@ export class BlockSystem {
     this.liveHeight = 0;
     this.stableHeight = 0;
 
+    this.previewX = 0;
+    this.previewY = 0;
+    this.previewZ = 0;
     this.previewQuaternion.identity();
 
     this.waitingBlockId = 1;
