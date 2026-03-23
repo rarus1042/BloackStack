@@ -72,6 +72,7 @@ export class Game {
     this.nextPreviewCamera = null;
     this.nextPreviewMesh = null;
     this.nextPreviewKey = "";
+this.nextPreviewKey = "";
 
     this.bgmEnabled = true;
     this.bgmUnlocked = false;
@@ -104,6 +105,93 @@ export class Game {
     this.createNextPreviewUI();
     this.setupBgmUnlock();
   }
+
+  getNextPreviewLayout() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const isMobile = w <= 768 || h <= 700;
+
+  if (w <= 420) {
+    return {
+      isMobile: true,
+      panelTop: 64,
+      panelRight: 10,
+      panelWidth: 108,
+      panelPadding: 8,
+      panelRadius: 12,
+      canvasSize: 84,
+      canvasPixelSize: 168,
+      titleFont: 10,
+      nameFont: 10,
+      nameMinHeight: 20,
+    };
+  }
+
+  if (w <= 768 || h <= 700) {
+    return {
+      isMobile: true,
+      panelTop: 70,
+      panelRight: 12,
+      panelWidth: 128,
+      panelPadding: 10,
+      panelRadius: 14,
+      canvasSize: 98,
+      canvasPixelSize: 196,
+      titleFont: 11,
+      nameFont: 11,
+      nameMinHeight: 24,
+    };
+  }
+
+  return {
+    isMobile: false,
+    panelTop: 72,
+    panelRight: 16,
+    panelWidth: 170,
+    panelPadding: 12,
+    panelRadius: 16,
+    canvasSize: 146,
+    canvasPixelSize: 292,
+    titleFont: 12,
+    nameFont: 12,
+    nameMinHeight: 32,
+  };
+}
+
+applyNextPreviewLayout() {
+  if (!this.nextPanel || !this.nextCanvas || !this.nextNameLabel || !this.nextPreviewCanvasWrap) {
+    return;
+  }
+
+  const layout = this.getNextPreviewLayout();
+
+  this.nextPanel.style.top = `${layout.panelTop}px`;
+  this.nextPanel.style.right = `${layout.panelRight}px`;
+  this.nextPanel.style.width = `${layout.panelWidth}px`;
+  this.nextPanel.style.padding = `${layout.panelPadding}px`;
+  this.nextPanel.style.borderRadius = `${layout.panelRadius}px`;
+
+  this.nextPreviewCanvasWrap.style.width = `${layout.canvasSize}px`;
+  this.nextPreviewCanvasWrap.style.height = `${layout.canvasSize}px`;
+
+  this.nextCanvas.width = layout.canvasPixelSize;
+  this.nextCanvas.height = layout.canvasPixelSize;
+  this.nextCanvas.style.width = `${layout.canvasSize}px`;
+  this.nextCanvas.style.height = `${layout.canvasSize}px`;
+
+  this.nextNameLabel.style.fontSize = `${layout.nameFont}px`;
+  this.nextNameLabel.style.minHeight = `${layout.nameMinHeight}px`;
+
+  const title = this.nextPanel.querySelector(".next-preview-title");
+  if (title) {
+    title.style.fontSize = `${layout.titleFont}px`;
+  }
+
+  if (this.nextPreviewRenderer) {
+    this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
+  }
+}
 
   createLoadingScreen() {
     let overlay = document.getElementById("loadingOverlay");
@@ -191,79 +279,72 @@ export class Game {
     this.loadingProgressFill = progressFill;
   }
 
-  createNextPreviewUI() {
-    let panel = document.getElementById("nextBlockPanel");
+ createNextPreviewUI() {
+  let panel = document.getElementById("nextBlockPanel");
+  const layout = this.getNextPreviewLayout();
 
-    if (!panel) {
-      panel = document.createElement("div");
-      panel.id = "nextBlockPanel";
-      panel.style.position = "fixed";
-      panel.style.top = "72px";
-      panel.style.right = "16px";
-      panel.style.width = "170px";
-      panel.style.padding = "12px";
-      panel.style.borderRadius = "16px";
-      panel.style.background = "rgba(0,0,0,0.48)";
-      panel.style.backdropFilter = "blur(8px)";
-      panel.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
-      panel.style.border = "1px solid rgba(255,255,255,0.10)";
-      panel.style.zIndex = "20";
-      panel.style.color = "white";
-      panel.style.userSelect = "none";
-      panel.style.webkitUserSelect = "none";
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "nextBlockPanel";
+    panel.style.position = "fixed";
+    panel.style.zIndex = "20";
+    panel.style.color = "white";
+    panel.style.userSelect = "none";
+    panel.style.webkitUserSelect = "none";
+    panel.style.background = "rgba(0,0,0,0.48)";
+    panel.style.backdropFilter = "blur(8px)";
+    panel.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
+    panel.style.border = "1px solid rgba(255,255,255,0.10)";
 
-      const title = document.createElement("div");
-      title.textContent = "NEXT";
-      title.style.fontSize = "12px";
-      title.style.fontWeight = "700";
-      title.style.letterSpacing = "1.2px";
-      title.style.opacity = "0.82";
-      title.style.marginBottom = "8px";
+    const title = document.createElement("div");
+    title.className = "next-preview-title";
+    title.textContent = "NEXT";
+    title.style.fontWeight = "700";
+    title.style.letterSpacing = "1.2px";
+    title.style.opacity = "0.82";
+    title.style.marginBottom = "8px";
 
-      const canvasWrap = document.createElement("div");
-      canvasWrap.style.width = "146px";
-      canvasWrap.style.height = "146px";
-      canvasWrap.style.borderRadius = "12px";
-      canvasWrap.style.overflow = "hidden";
-      canvasWrap.style.background =
-        "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 52%, rgba(255,255,255,0.01) 100%)";
-      canvasWrap.style.border = "1px solid rgba(255,255,255,0.08)";
-      canvasWrap.style.marginBottom = "8px";
+    const canvasWrap = document.createElement("div");
+    canvasWrap.id = "nextPreviewCanvasWrap";
+    canvasWrap.style.borderRadius = "12px";
+    canvasWrap.style.overflow = "hidden";
+    canvasWrap.style.background =
+      "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 52%, rgba(255,255,255,0.01) 100%)";
+    canvasWrap.style.border = "1px solid rgba(255,255,255,0.08)";
+    canvasWrap.style.marginBottom = "8px";
 
-      const canvas = document.createElement("canvas");
-      canvas.id = "nextBlockCanvas";
-      canvas.width = 292;
-      canvas.height = 292;
-      canvas.style.width = "146px";
-      canvas.style.height = "146px";
-      canvas.style.display = "block";
+    const canvas = document.createElement("canvas");
+    canvas.id = "nextBlockCanvas";
+    canvas.style.display = "block";
 
-      const name = document.createElement("div");
-      name.id = "nextBlockNameLabel";
-      name.textContent = "-";
-      name.style.fontSize = "12px";
-      name.style.textAlign = "center";
-      name.style.opacity = "0.92";
-      name.style.wordBreak = "break-word";
-      name.style.lineHeight = "1.35";
-      name.style.minHeight = "32px";
+    const name = document.createElement("div");
+    name.id = "nextBlockNameLabel";
+    name.textContent = "-";
+    name.style.textAlign = "center";
+    name.style.opacity = "0.92";
+    name.style.wordBreak = "break-word";
+    name.style.lineHeight = "1.35";
 
-      canvasWrap.appendChild(canvas);
-      panel.appendChild(title);
-      panel.appendChild(canvasWrap);
-      panel.appendChild(name);
-      document.body.appendChild(panel);
+    canvasWrap.appendChild(canvas);
+    panel.appendChild(title);
+    panel.appendChild(canvasWrap);
+    panel.appendChild(name);
+    document.body.appendChild(panel);
 
-      this.nextCanvas = canvas;
-      this.nextNameLabel = name;
-    } else {
-      this.nextCanvas = panel.querySelector("#nextBlockCanvas");
-      this.nextNameLabel = panel.querySelector("#nextBlockNameLabel");
-    }
-
-    this.nextPanel = panel;
-    this.initNextPreviewScene();
+    this.nextCanvas = canvas;
+    this.nextNameLabel = name;
+    this.nextPreviewCanvasWrap = canvasWrap;
+  } else {
+    this.nextCanvas = panel.querySelector("#nextBlockCanvas");
+    this.nextNameLabel = panel.querySelector("#nextBlockNameLabel");
+    this.nextPreviewCanvasWrap = panel.querySelector("#nextPreviewCanvasWrap");
   }
+
+  this.nextPanel = panel;
+
+  this.applyNextPreviewLayout();
+  this.initNextPreviewScene();
+}
 
   initNextPreviewScene() {
     if (!this.nextCanvas || this.nextPreviewRenderer) return;
@@ -275,7 +356,8 @@ export class Game {
     });
 
     this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.nextPreviewRenderer.setSize(146, 146, false);
+  const layout = this.getNextPreviewLayout();
+this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
 
     this.nextPreviewScene = new THREE.Scene();
 
@@ -711,16 +793,13 @@ export class Game {
     this.updateControlButton();
   }
 
-  onResize() {
-    if (this.renderer.resize) {
-      this.renderer.resize(window.innerWidth, window.innerHeight);
-    }
-
-    if (this.nextPreviewRenderer) {
-      this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      this.nextPreviewRenderer.setSize(146, 146, false);
-    }
+onResize() {
+  if (this.renderer.resize) {
+    this.renderer.resize(window.innerWidth, window.innerHeight);
   }
+
+  this.applyNextPreviewLayout();
+}
 
   async handleFail() {
     if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
