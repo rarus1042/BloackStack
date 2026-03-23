@@ -17,7 +17,8 @@ export class Renderer {
       0.1,
       1000
     );
-  this.camera.position.set(6.6, 5.1, 6.6);
+    this.camera.position.set(6.6, 5.1, 6.6);
+
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: false,
@@ -55,22 +56,21 @@ export class Renderer {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
 
-this.defaultCameraPosition = new THREE.Vector3(6.6, 5.1, 6.6);
-this.defaultTarget = new THREE.Vector3(0, this.cameraMinTargetY, 0);
-this.controls.target.copy(this.defaultTarget);
-
     this.cameraFollowLerp = options.cameraFollowLerp ?? 0.12;
     this.cameraHeightOffset = options.cameraHeightOffset ?? 0.18;
-
     this.cameraMinTargetY = options.cameraMinTargetY ?? 0.75;
-this.heightStep = options.heightStep ?? 0.5;
+    this.heightStep = options.heightStep ?? 0.5;
 
-// 마지막으로 카메라가 추적 승인한 높이
-this.trackedHeightStep = 0;
+    this.defaultCameraPosition = new THREE.Vector3(6.6, 5.1, 6.6);
+    this.defaultTarget = new THREE.Vector3(0, this.cameraMinTargetY, 0);
+    this.controls.target.copy(this.defaultTarget);
+
+    this.trackedHeightStep = 0;
 
     this.groundMesh = null;
     this.rimMesh = null;
     this.backgroundTexture = null;
+    this.grassTexture = null;
 
     this.setupLights();
     this.setupFog();
@@ -78,7 +78,15 @@ this.trackedHeightStep = 0;
   }
 
   async init() {
-    await this.loadSkyBackground("./assets/sky_36_2k.png");
+await Promise.allSettled([
+  this.loadSkyBackground("./assets/sky_36_2k.png"),
+  this.loadGrassTexture(
+    "./assets/grass.png",
+    "./assets/grass_normal.png"
+  ),
+]);
+
+    this.setupStage();
     this.onResize();
   }
 
@@ -108,7 +116,45 @@ this.trackedHeightStep = 0;
       );
     });
   }
+async loadGrassTexture(path, normalPath) {
+  const loader = new THREE.TextureLoader();
 
+  return new Promise((resolve, reject) => {
+    loader.load(
+      path,
+      (colorTex) => {
+        colorTex.encoding = THREE.sRGBEncoding;
+        colorTex.wrapS = THREE.RepeatWrapping;
+        colorTex.wrapT = THREE.RepeatWrapping;
+
+        const repeat = Math.max(2, Math.round(this.stageSize * 1.5));
+        colorTex.repeat.set(repeat, repeat);
+
+        loader.load(
+          normalPath,
+          (normalTex) => {
+            normalTex.wrapS = THREE.RepeatWrapping;
+            normalTex.wrapT = THREE.RepeatWrapping;
+            normalTex.repeat.copy(colorTex.repeat);
+
+            this.grassTexture = colorTex;
+            this.grassNormal = normalTex;
+
+            resolve();
+          },
+          undefined,
+          () => {
+            console.warn("Normal map load failed");
+            this.grassTexture = colorTex;
+            resolve();
+          }
+        );
+      },
+      undefined,
+      reject
+    );
+  });
+}
   setupFog() {
     this.scene.fog = new THREE.Fog(0x9fc6e3, 45, 120);
   }
@@ -141,8 +187,14 @@ this.trackedHeightStep = 0;
 
     if (this.groundMesh) {
       this.scene.remove(this.groundMesh);
+
+      if (Array.isArray(this.groundMesh.material)) {
+        this.groundMesh.material.forEach((mat) => mat.dispose());
+      } else {
+        this.groundMesh.material.dispose();
+      }
+
       this.groundMesh.geometry.dispose();
-      this.groundMesh.material.dispose();
       this.groundMesh = null;
     }
 
@@ -154,13 +206,38 @@ this.trackedHeightStep = 0;
     }
 
     const groundGeometry = new THREE.CylinderGeometry(radius, radius, thickness, 64);
-    const groundMaterial = new THREE.MeshStandardMaterial({
-      color: 0xf2f4f7,
-      roughness: 0.94,
-      metalness: 0.02,
+
+    const sideMaterial = new THREE.MeshStandardMaterial({
+      color: 0x6c8f45,
+      roughness: 0.96,
+      metalness: 0.0,
     });
 
-    this.groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+const topMaterial = this.grassTexture
+  ? new THREE.MeshStandardMaterial({
+      map: this.grassTexture,
+      normalMap: this.grassNormal,   // ⭐ 핵심
+      normalScale: new THREE.Vector2(0.8, 0.8), // 강도 조절
+      roughness: 1.0,
+      metalness: 0.0,
+    })
+  : new THREE.MeshStandardMaterial({
+      color: 0x63a84a,
+      roughness: 1.0,
+      metalness: 0.0,
+    });
+    const bottomMaterial = new THREE.MeshStandardMaterial({
+      color: 0x5b6a4a,
+      roughness: 0.98,
+      metalness: 0.0,
+    });
+
+    this.groundMesh = new THREE.Mesh(groundGeometry, [
+      sideMaterial,
+      topMaterial,
+      bottomMaterial,
+    ]);
+
     this.groundMesh.position.set(0, centerY, 0);
     this.groundMesh.receiveShadow = true;
     this.groundMesh.castShadow = false;
@@ -168,9 +245,9 @@ this.trackedHeightStep = 0;
 
     const rimGeometry = new THREE.TorusGeometry(radius, 0.025, 16, 100);
     const rimMaterial = new THREE.MeshStandardMaterial({
-      color: 0xd1d5db,
-      roughness: 0.85,
-      metalness: 0.04,
+      color: 0xd8e0d2,
+      roughness: 0.82,
+      metalness: 0.03,
     });
 
     this.rimMesh = new THREE.Mesh(rimGeometry, rimMaterial);
@@ -188,38 +265,36 @@ this.trackedHeightStep = 0;
   }
 
   quantizeHeightStep(height) {
-  const step = this.heightStep ?? 0.5;
-  if (step <= 0) return height;
-
-  return Math.floor(height / step) * step;
-}
-
-updateCamera(height = 0) {
-  const steppedHeight = this.quantizeHeightStep(height);
-
-  // 0.5 이상 높이 변화가 생겼을 때만 추적 목표 갱신
-  if (steppedHeight > this.trackedHeightStep) {
-    this.trackedHeightStep = steppedHeight;
+    const step = this.heightStep ?? 0.5;
+    if (step <= 0) return height;
+    return Math.floor(height / step) * step;
   }
 
-  const targetY = Math.max(
-    this.cameraMinTargetY,
-    this.trackedHeightStep + this.cameraHeightOffset
-  );
+  updateCamera(height = 0) {
+    const steppedHeight = this.quantizeHeightStep(height);
 
-  this.controls.target.y = THREE.MathUtils.lerp(
-    this.controls.target.y,
-    targetY,
-    this.cameraFollowLerp
-  );
-}
+    if (steppedHeight > this.trackedHeightStep) {
+      this.trackedHeightStep = steppedHeight;
+    }
 
-resetCamera() {
-  this.trackedHeightStep = 0;
-  this.camera.position.copy(this.defaultCameraPosition);
-  this.controls.target.copy(this.defaultTarget);
-  this.controls.update();
-}
+    const targetY = Math.max(
+      this.cameraMinTargetY,
+      this.trackedHeightStep + this.cameraHeightOffset
+    );
+
+    this.controls.target.y = THREE.MathUtils.lerp(
+      this.controls.target.y,
+      targetY,
+      this.cameraFollowLerp
+    );
+  }
+
+  resetCamera() {
+    this.trackedHeightStep = 0;
+    this.camera.position.copy(this.defaultCameraPosition);
+    this.controls.target.copy(this.defaultTarget);
+    this.controls.update();
+  }
 
   update() {
     this.controls.update();
