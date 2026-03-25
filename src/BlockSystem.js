@@ -163,7 +163,7 @@ export class BlockSystem {
 
   setPreviewPosition(x, z) {
     if (!this.currentBlock) return;
-    if (this.state !== "EDIT") return;
+    if (this.state !== "EDIT" && this.state !== "ROTATE") return;
 
     const c = this.clampPreviewPosition(x, z);
 

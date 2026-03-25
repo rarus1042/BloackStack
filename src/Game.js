@@ -45,6 +45,19 @@ export class Game {
     this.actionButton = document.getElementById("actionButton");
     this.rotateButtonsPanel = null;
     this.rotateButtons = { x: null, y: null, z: null };
+        this.joystickRoot = null;
+    this.joystickBase = null;
+    this.joystickKnob = null;
+    this.joystickPointerId = null;
+    this.joystickActive = false;
+
+    this.joystickInput = new THREE.Vector2();
+    this.joystickForward = new THREE.Vector3();
+    this.joystickRight = new THREE.Vector3();
+    this.joystickMove = new THREE.Vector3();
+
+    this.joystickMoveSpeed = 2.35;
+    this.joystickMaxRadius = 34;
         this.hoverRotateAxis = null;
     this.rotationGhost = null;
     this.rotationGhostAxis = null;
@@ -116,10 +129,14 @@ export class Game {
     this.onBgmToggleClick = this.onBgmToggleClick.bind(this);
     this.unlockBgm = this.unlockBgm.bind(this);
     this.loadingLoop = this.loadingLoop.bind(this);
+   this.onJoystickPointerDown = this.onJoystickPointerDown.bind(this);
+    this.onJoystickPointerMove = this.onJoystickPointerMove.bind(this);
+    this.onJoystickPointerUp = this.onJoystickPointerUp.bind(this);
 
     this.createLoadingScreen();
     this.createBgmToggleButton();
     this.createRotateStepButtons();
+    this.createMoveJoystick();
     this.createNextPreviewUI();
     this.setupBgmUnlock();
   }
@@ -351,6 +368,294 @@ export class Game {
     this.updateRotateButtonsLayout();
     this.updateRotateButtonsUI();
   }
+
+    createMoveJoystick() {
+    let root = document.getElementById("moveJoystickRoot");
+
+    if (!root) {
+      root = document.createElement("div");
+      root.id = "moveJoystickRoot";
+      root.style.position = "fixed";
+root.style.right = "16px";
+root.style.bottom = "16px";
+root.style.left = "auto"; // 중요 (충돌 방지)
+      root.style.zIndex = "26";
+      root.style.width = "108px";
+      root.style.height = "108px";
+      root.style.userSelect = "none";
+      root.style.webkitUserSelect = "none";
+      root.style.touchAction = "none";
+      root.style.pointerEvents = "auto";
+
+      const base = document.createElement("div");
+      base.id = "moveJoystickBase";
+      base.style.position = "absolute";
+      base.style.left = "0";
+      base.style.top = "0";
+      base.style.width = "100%";
+      base.style.height = "100%";
+      base.style.borderRadius = "999px";
+      base.style.background = "rgba(0,0,0,0.30)";
+      base.style.backdropFilter = "blur(8px)";
+      base.style.border = "1px solid rgba(255,255,255,0.12)";
+      base.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
+      base.style.overflow = "hidden";
+      base.style.touchAction = "none";
+
+      const ring = document.createElement("div");
+      ring.style.position = "absolute";
+      ring.style.left = "50%";
+      ring.style.top = "50%";
+      ring.style.width = "72px";
+      ring.style.height = "72px";
+      ring.style.marginLeft = "-36px";
+      ring.style.marginTop = "-36px";
+      ring.style.borderRadius = "999px";
+      ring.style.border = "1px solid rgba(255,255,255,0.08)";
+      ring.style.background = "rgba(255,255,255,0.02)";
+      ring.style.pointerEvents = "none";
+
+      const knob = document.createElement("div");
+      knob.id = "moveJoystickKnob";
+      knob.style.position = "absolute";
+      knob.style.left = "50%";
+      knob.style.top = "50%";
+      knob.style.width = "52px";
+      knob.style.height = "52px";
+      knob.style.marginLeft = "-26px";
+      knob.style.marginTop = "-26px";
+      knob.style.borderRadius = "999px";
+      knob.style.background = "rgba(255,255,255,0.22)";
+      knob.style.border = "1px solid rgba(255,255,255,0.16)";
+      knob.style.boxShadow = "0 6px 18px rgba(0,0,0,0.16)";
+      knob.style.transform = "translate(0px, 0px)";
+      knob.style.transition = "transform 0.08s linear, background 0.12s ease";
+      knob.style.pointerEvents = "none";
+
+      const hint = document.createElement("div");
+      hint.textContent = "MOVE";
+      hint.style.position = "absolute";
+      hint.style.left = "50%";
+      hint.style.top = "-20px";
+      hint.style.transform = "translateX(-50%)";
+      hint.style.fontSize = "11px";
+      hint.style.fontWeight = "700";
+      hint.style.letterSpacing = "1px";
+      hint.style.color = "rgba(255,255,255,0.72)";
+      hint.style.pointerEvents = "none";
+
+      base.appendChild(ring);
+      base.appendChild(knob);
+      root.appendChild(base);
+      root.appendChild(hint);
+      document.body.appendChild(root);
+
+      base.addEventListener("pointerdown", this.onJoystickPointerDown, {
+        passive: false,
+      });
+
+      window.addEventListener("pointermove", this.onJoystickPointerMove, {
+        passive: false,
+      });
+
+      window.addEventListener("pointerup", this.onJoystickPointerUp, {
+        passive: false,
+      });
+
+      window.addEventListener("pointercancel", this.onJoystickPointerUp, {
+        passive: false,
+      });
+
+      this.joystickBase = base;
+      this.joystickKnob = knob;
+    } else {
+      this.joystickBase = root.querySelector("#moveJoystickBase");
+      this.joystickKnob = root.querySelector("#moveJoystickKnob");
+    }
+
+    this.joystickRoot = root;
+    this.updateJoystickLayout();
+    this.updateJoystickUI();
+    this.resetJoystickVisual();
+  }
+
+  updateJoystickLayout() {
+    if (!this.joystickRoot) return;
+
+    const isMobile = window.innerWidth <= 768 || window.innerHeight <= 700;
+
+this.joystickRoot.style.right = "16px";
+this.joystickRoot.style.left = "auto";
+this.joystickRoot.style.bottom = isMobile ? "16px" : "18px";
+    this.joystickRoot.style.width = isMobile ? "96px" : "108px";
+    this.joystickRoot.style.height = isMobile ? "96px" : "108px";
+
+    if (this.joystickKnob) {
+      this.joystickKnob.style.width = isMobile ? "46px" : "52px";
+      this.joystickKnob.style.height = isMobile ? "46px" : "52px";
+      this.joystickKnob.style.marginLeft = isMobile ? "-23px" : "-26px";
+      this.joystickKnob.style.marginTop = isMobile ? "-23px" : "-26px";
+    }
+
+    this.joystickMaxRadius = isMobile ? 28 : 34;
+  }
+
+  canUseJoystick() {
+    if (!this.blockSystem) return false;
+    if (this.isGameOver || this.isRestarting) return false;
+    if (!this.blockSystem.getCurrentPreviewBlock()) return false;
+
+    return (
+      this.blockSystem.state === "EDIT" ||
+      this.blockSystem.state === "ROTATE"
+    );
+  }
+
+  updateJoystickUI() {
+    if (!this.joystickRoot || !this.joystickBase) return;
+
+    const enabled = this.canUseJoystick();
+
+    this.joystickRoot.style.opacity = enabled ? "1" : "0.45";
+    this.joystickRoot.style.pointerEvents = enabled ? "auto" : "none";
+    this.joystickBase.style.background = enabled
+      ? "rgba(0,0,0,0.30)"
+      : "rgba(0,0,0,0.18)";
+
+    if (!enabled) {
+      this.releaseJoystick();
+    }
+  }
+
+  resetJoystickVisual() {
+    if (!this.joystickKnob) return;
+    this.joystickKnob.style.transform = "translate(0px, 0px)";
+    this.joystickKnob.style.background = this.joystickActive
+      ? "rgba(255,255,255,0.30)"
+      : "rgba(255,255,255,0.22)";
+  }
+
+  releaseJoystick() {
+    this.joystickPointerId = null;
+    this.joystickActive = false;
+    this.joystickInput.set(0, 0);
+    this.resetJoystickVisual();
+  }
+
+  updateJoystickFromEvent(event) {
+    if (!this.joystickBase || !this.joystickKnob) return;
+
+    const rect = this.joystickBase.getBoundingClientRect();
+    const centerX = rect.left + rect.width * 0.5;
+    const centerY = rect.top + rect.height * 0.5;
+
+    let dx = event.clientX - centerX;
+    let dy = event.clientY - centerY;
+
+    const dist = Math.hypot(dx, dy);
+    const maxR = this.joystickMaxRadius;
+
+    if (dist > maxR && dist > 0.0001) {
+      const s = maxR / dist;
+      dx *= s;
+      dy *= s;
+    }
+
+    this.joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    this.joystickKnob.style.background = "rgba(255,255,255,0.30)";
+
+    this.joystickInput.set(dx / maxR, -dy / maxR);
+  }
+
+  onJoystickPointerDown(event) {
+    if (!this.canUseJoystick()) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    this.joystickPointerId = event.pointerId;
+    this.joystickActive = true;
+
+    if (this.joystickBase?.setPointerCapture) {
+      try {
+        this.joystickBase.setPointerCapture(event.pointerId);
+      } catch (_) {}
+    }
+
+    this.updateJoystickFromEvent(event);
+  }
+
+  onJoystickPointerMove(event) {
+    if (!this.joystickActive) return;
+    if (this.joystickPointerId !== event.pointerId) return;
+
+    event.preventDefault();
+    this.updateJoystickFromEvent(event);
+  }
+
+  onJoystickPointerUp(event) {
+    if (!this.joystickActive) return;
+    if (this.joystickPointerId !== event.pointerId) return;
+
+    event.preventDefault();
+
+    if (this.joystickBase?.releasePointerCapture) {
+      try {
+        this.joystickBase.releasePointerCapture(event.pointerId);
+      } catch (_) {}
+    }
+
+    this.releaseJoystick();
+  }
+
+  applyJoystickMovement(dt) {
+    if (!this.canUseJoystick()) return;
+    if (!this.joystickActive) return;
+
+    const block = this.blockSystem.getCurrentPreviewBlock();
+    if (!block?.mesh) return;
+
+    const inputLen = Math.min(1, this.joystickInput.length());
+    if (inputLen <= 0.001) return;
+
+    this.renderer.camera.getWorldDirection(this.joystickForward);
+    this.joystickForward.y = 0;
+
+    if (this.joystickForward.lengthSq() < 1e-6) {
+      this.joystickForward.set(0, 0, -1);
+    } else {
+      this.joystickForward.normalize();
+    }
+
+    this.joystickRight.crossVectors(
+      this.joystickForward,
+      new THREE.Vector3(0, 1, 0)
+    );
+
+    if (this.joystickRight.lengthSq() < 1e-6) {
+      this.joystickRight.set(1, 0, 0);
+    } else {
+      this.joystickRight.normalize();
+    }
+
+    this.joystickMove
+      .copy(this.joystickRight)
+      .multiplyScalar(this.joystickInput.x)
+      .addScaledVector(this.joystickForward, this.joystickInput.y);
+
+    if (this.joystickMove.lengthSq() < 1e-6) return;
+
+    this.joystickMove.normalize();
+
+    const speed = this.joystickMoveSpeed * inputLen;
+    const moveDistance = speed * dt;
+
+    const nextX = block.mesh.position.x + this.joystickMove.x * moveDistance;
+    const nextZ = block.mesh.position.z + this.joystickMove.z * moveDistance;
+
+    this.blockSystem.setPreviewPosition(nextX, nextZ);
+  }
+
    updateRotateButtonsLayout() {
     if (!this.rotateButtonsPanel) return;
 
@@ -954,12 +1259,13 @@ export class Game {
       });
 
       this.setLoadingProgress(0.96, "UI 정리 중...");
-        this.updateNicknameUI();
+      this.updateNicknameUI();
       this.updateHeightUI();
       this.updateBestHeightUI();
       this.updateVersionUI();
       this.updateBgmButtonUI();
       this.updateRotateButtonsUI();
+      this.updateJoystickUI();
       await this.updateNextPreviewUI();
 
       window.addEventListener("resize", this.onResize);
@@ -1144,6 +1450,7 @@ export class Game {
 
     this.updateControlButton();
     this.updateRotateButtonsUI();
+    this.updateJoystickUI();
   }
 
 onResize() {
@@ -1153,6 +1460,7 @@ onResize() {
 
   this.applyNextPreviewLayout();
   this.updateRotateButtonsLayout();
+  this.updateJoystickLayout();
 }
 
   async handleFail() {
@@ -1207,20 +1515,30 @@ onResize() {
     await this.blockSystem.createBlock();
     await this.updateNextPreviewUI();
 
+    this.releaseJoystick();
+
     this.isRestarting = false;
     this.updateControlButton();
     this.updateRotateButtonsUI();
+    this.updateJoystickUI();
   }
 
   async animate(time) {
     if (!this.isAnimating) return;
 
     requestAnimationFrame(this.animate);
+
+    const dt = this.lastTime > 0
+      ? Math.min(0.033, (time - this.lastTime) / 1000)
+      : 0.016;
+
     this.lastTime = time;
 
     if (!this.isGameOver && !this.isRestarting && this.blockSystem) {
       this.physics.step();
       this.blockSystem.update();
+
+      this.applyJoystickMovement(dt);
 
       const followHeight = this.blockSystem.getMaxHeight();
       this.renderer.updateCamera(followHeight);
@@ -1228,19 +1546,18 @@ onResize() {
       this.updateHeightUI();
       this.updateControlButton();
       this.updateRotateButtonsUI();
+      this.updateJoystickUI();
       await this.updateNextPreviewUI();
     }
 
-     if (this.placementController) {
+    if (this.placementController) {
       this.placementController.update();
-          this.updateRotationButtonHints();
     }
-
-    this.updateRotationButtonHints();
 
     if (this.renderer.update) {
       this.renderer.update();
     }
+
     this.renderer.render();
     this.renderNextPreview();
   }
