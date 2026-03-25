@@ -15,14 +15,14 @@ export class BlockSystem {
     this.currentBlock = null;
     this.isSpawning = false;
 
-    this.stageSize = options.stageSize ?? 5;
+    this.stageSize = options.stageSize ?? 4;
     this.blockSize = options.blockSize ?? 1;
     this.failY = options.failY ?? -3;
-    this.fallSpeed = options.fallSpeed ?? 2;
+    this.fallSpeed = options.fallSpeed ?? 1.6;
 
-    this.spawnClearance = options.spawnClearance ?? 1.6;
-    this.minSpawnHeight = options.minSpawnHeight ?? 2.3;
-    this.previewClampPadding = options.previewClampPadding ?? 0.35;
+    this.spawnClearance = options.spawnClearance ?? 1.9;
+    this.minSpawnHeight = options.minSpawnHeight ?? 2.8;
+    this.previewClampPadding = options.previewClampPadding ?? 0.25;
 
     this.liveHeight = 0;
     this.stableHeight = 0;
@@ -41,18 +41,19 @@ export class BlockSystem {
 
     this.factory = new BlockFactory(scene, physics, {
       blockSize: this.blockSize,
+      cellSize: options.cellSize ?? this.blockSize * 0.45,
+      visualCellScale: 0.94,
       fallSpeed: this.fallSpeed,
-      linearDamping: 2.2,
-      angularDamping: 6.5,
-      modelListPath: "models/model-list.json",
+      linearDamping: 2.0,
+      angularDamping: 5.8,
     });
 
     this.monitor = new StructureMonitor({
       stageSize: this.stageSize,
       failY: this.failY,
 
-      contactVerticalThreshold: 0.32,
-      contactHorizontalThreshold: 0.26,
+      contactVerticalThreshold: 0.34,
+      contactHorizontalThreshold: 0.28,
       contactFramesRequired: 2,
 
       landingMinFrames: 4,
@@ -60,13 +61,13 @@ export class BlockSystem {
       maxLandingYDelta: 0.02,
       maxLandingTime: 5.0,
 
-      largeMoveLinearThreshold: 0.9,
-      largeMoveAngularThreshold: 0.9,
+      largeMoveLinearThreshold: 1.0,
+      largeMoveAngularThreshold: 1.0,
 
       jitterLinearMin: 0.02,
       jitterLinearMax: 0.22,
       jitterAngularMin: 0.02,
-      jitterAngularMax: 0.32,
+      jitterAngularMax: 0.34,
       jitterPositionDeltaMax: 0.006,
       jitterYDeltaMax: 0.006,
       jitterFramesRequired: 16,
@@ -131,7 +132,14 @@ export class BlockSystem {
   }
 
   clampPreviewPosition(x, z) {
-    const radius = Math.max(0, this.stageSize / 2 - this.previewClampPadding);
+    const current = this.getCurrentPreviewBlock();
+    const footprintRadius = current?.footprintRadius ?? 0;
+
+    const radius = Math.max(
+      0,
+      this.stageSize / 2 - this.previewClampPadding - footprintRadius
+    );
+
     const len = Math.hypot(x, z);
 
     if (len <= radius || len === 0) return { x, z };

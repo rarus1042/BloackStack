@@ -1,5 +1,4 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js";
-import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/GLTFLoader.js";
 
 export class BlockFactory {
   constructor(scene, physics, options = {}) {
@@ -9,131 +8,182 @@ export class BlockFactory {
     this.world = physics.world;
 
     this.blockSize = options.blockSize ?? 1;
-    this.fallSpeed = options.fallSpeed ?? 0.9;
-    this.linearDamping = options.linearDamping ?? 2.2;
-    this.angularDamping = options.angularDamping ?? 6.5;
+    this.cellSize = options.cellSize ?? this.blockSize * 0.45;
+    this.visualCellScale = options.visualCellScale ?? 0.94;
 
-    this.modelListPath = options.modelListPath ?? "models/model-list.json";
+    this.fallSpeed = options.fallSpeed ?? 1.6;
+    this.linearDamping = options.linearDamping ?? 2.0;
+    this.angularDamping = options.angularDamping ?? 5.8;
 
-    this.loader = new GLTFLoader();
+    this.geometryCache = new Map();
+    this.materialCache = new Map();
 
-    this.modelEntries = [];
-    this.modelListLoaded = false;
-    this.nextModelEntry = null;
-
-    this.modelCache = new Map();
-    this.scaleCache = new Map();
-    this.collisionCache = new Map();
+    this.shapeEntries = this.createShapeLibrary();
+    this.nextShapeEntry = null;
   }
 
-  normalizeModelEntry(entry) {
-    if (typeof entry === "string") {
-      const trimmed = entry.trim();
-      if (!trimmed) return null;
-
-      return {
-        file: trimmed,
-        path: `models/${trimmed}`,
-        scaleFactor: 1.0,
-        weight: 50,
-      };
-    }
-
-    if (entry && typeof entry === "object") {
-      const file =
-        typeof entry.file === "string"
-          ? entry.file.trim()
-          : typeof entry.name === "string"
-          ? entry.name.trim()
-          : "";
-
-      if (!file) return null;
-
-      let scaleFactor =
-        typeof entry.scaleFactor === "number"
-          ? entry.scaleFactor
-          : typeof entry.scale === "number"
-          ? entry.scale
-          : 1.0;
-
-      if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
-        scaleFactor = 1.0;
-      }
-
-      let weight =
-        typeof entry.weight === "number"
-          ? Math.round(entry.weight)
-          : 50;
-
-      weight = Math.max(1, Math.min(100, weight));
-
-      return {
-        file,
-        path: `models/${file}`,
-        scaleFactor,
-        weight,
-      };
-    }
-
-    return null;
-  }
-
-  async ensureModelListLoaded() {
-    if (this.modelListLoaded) return;
-
-    const response = await fetch(this.modelListPath, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to load model list: ${this.modelListPath} (${response.status})`
-      );
-    }
-
-    const data = await response.json();
-    const files = Array.isArray(data?.files) ? data.files : [];
-
-    this.modelEntries = files
-      .map((entry) => this.normalizeModelEntry(entry))
-      .filter(Boolean);
-
-    this.modelListLoaded = true;
-
-    if (!this.modelEntries.length) {
-      throw new Error(
-        "Model list is empty. Add .glb files to models/ and regenerate model-list.json"
-      );
-    }
+  createShapeLibrary() {
+    return [
+      {
+        key: "I4",
+        name: "I Bar",
+        color: 0x4fd1ff,
+        weight: 12,
+        cells: [
+          [-1.5, 0, 0],
+          [-0.5, 0, 0],
+          [0.5, 0, 0],
+          [1.5, 0, 0],
+        ],
+      },
+      {
+        key: "O4",
+        name: "Square",
+        color: 0xffd54f,
+        weight: 10,
+        cells: [
+          [-0.5, -0.5, 0],
+          [0.5, -0.5, 0],
+          [-0.5, 0.5, 0],
+          [0.5, 0.5, 0],
+        ],
+      },
+      {
+        key: "L4",
+        name: "L Block",
+        color: 0xff9f43,
+        weight: 12,
+        cells: [
+          [-1, 0, 0],
+          [0, 0, 0],
+          [1, 0, 0],
+          [1, 1, 0],
+        ],
+      },
+      {
+        key: "T4",
+        name: "T Block",
+        color: 0xb084ff,
+        weight: 12,
+        cells: [
+          [-1, 0, 0],
+          [0, 0, 0],
+          [1, 0, 0],
+          [0, 1, 0],
+        ],
+      },
+      {
+        key: "S4",
+        name: "S Block",
+        color: 0x67e08a,
+        weight: 10,
+        cells: [
+          [-1, 0, 0],
+          [0, 0, 0],
+          [0, 1, 0],
+          [1, 1, 0],
+        ],
+      },
+      {
+        key: "Corner3D",
+        name: "3D Corner",
+        color: 0xff6b6b,
+        weight: 12,
+        cells: [
+          [0, 0, 0],
+          [1, 0, 0],
+          [0, 1, 0],
+          [0, 0, 1],
+        ],
+      },
+      {
+        key: "Tripod",
+        name: "Tripod",
+        color: 0x5eead4,
+        weight: 9,
+        cells: [
+          [0, 0, 0],
+          [1, 0, 0],
+          [0, 0, 1],
+          [0, 1, 0],
+        ],
+      },
+      {
+        key: "Pillar3",
+        name: "Pillar",
+        color: 0xe879f9,
+        weight: 8,
+        cells: [
+          [0, -1, 0],
+          [0, 0, 0],
+          [0, 1, 0],
+        ],
+      },
+      {
+        key: "Bridge",
+        name: "Bridge",
+        color: 0x60a5fa,
+        weight: 9,
+        cells: [
+          [-1, 0, 0],
+          [0, 0, 0],
+          [1, 0, 0],
+          [0, 1, 0],
+          [0, 0, 1],
+        ],
+      },
+      {
+        key: "Step3D",
+        name: "3D Step",
+        color: 0xf472b6,
+        weight: 10,
+        cells: [
+          [-1, 0, 0],
+          [0, 0, 0],
+          [0, 1, 0],
+          [1, 1, 0],
+          [1, 1, 1],
+        ],
+      },
+    ];
   }
 
   getWeightedRandomEntry() {
-    if (!this.modelEntries.length) {
-      throw new Error("BlockFactory: modelEntries is empty.");
-    }
-
     let totalWeight = 0;
-    for (const entry of this.modelEntries) {
-      totalWeight += entry.weight;
+    for (const entry of this.shapeEntries) {
+      totalWeight += entry.weight ?? 1;
     }
 
-    let r = Math.floor(Math.random() * totalWeight) + 1;
+    let r = Math.random() * totalWeight;
 
-    for (const entry of this.modelEntries) {
-      r -= entry.weight;
+    for (const entry of this.shapeEntries) {
+      r -= entry.weight ?? 1;
       if (r <= 0) {
-        return { ...entry };
+        return {
+          key: entry.key,
+          name: entry.name,
+          color: entry.color,
+          weight: entry.weight,
+          cells: entry.cells.map((c) => [...c]),
+        };
       }
     }
 
-    return { ...this.modelEntries[this.modelEntries.length - 1] };
+    const last = this.shapeEntries[this.shapeEntries.length - 1];
+    return {
+      key: last.key,
+      name: last.name,
+      color: last.color,
+      weight: last.weight,
+      cells: last.cells.map((c) => [...c]),
+    };
   }
 
   async ensureNextModelEntry() {
-    await this.ensureModelListLoaded();
-
-    if (!this.nextModelEntry) {
-      this.nextModelEntry = this.getWeightedRandomEntry();
+    if (!this.nextShapeEntry) {
+      this.nextShapeEntry = this.getWeightedRandomEntry();
     }
-
-    return this.nextModelEntry;
+    return this.nextShapeEntry;
   }
 
   async peekNextModelEntry() {
@@ -142,173 +192,151 @@ export class BlockFactory {
 
   async consumeNextModelEntry() {
     const current = await this.ensureNextModelEntry();
-    this.nextModelEntry = this.getWeightedRandomEntry();
+    this.nextShapeEntry = this.getWeightedRandomEntry();
     return current;
   }
 
-  async loadModel(modelPath) {
-    if (this.modelCache.has(modelPath)) {
-      return this.modelCache.get(modelPath);
+  getCubeGeometry() {
+    const key = `cube-${this.cellSize}-${this.visualCellScale}`;
+    if (this.geometryCache.has(key)) {
+      return this.geometryCache.get(key);
     }
 
-    const gltf = await this.loader.loadAsync(modelPath);
-    const scene = gltf.scene;
-    this.modelCache.set(modelPath, scene);
-    return scene;
+    const size = this.cellSize * this.visualCellScale;
+    const geometry = new THREE.BoxGeometry(size, size, size);
+    this.geometryCache.set(key, geometry);
+    return geometry;
   }
 
-  getModelScale(baseModel, modelPath, scaleFactor = 1.0) {
-    const cacheKey = `${modelPath}::${scaleFactor}`;
-
-    if (this.scaleCache.has(cacheKey)) {
-      return this.scaleCache.get(cacheKey);
+  getMaterial(color) {
+    const key = `${color}`;
+    if (this.materialCache.has(key)) {
+      return this.materialCache.get(key);
     }
 
-    const temp = baseModel.clone(true);
-    const box = new THREE.Box3().setFromObject(temp);
-    const size = new THREE.Vector3();
-    box.getSize(size);
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.86,
+      metalness: 0.04,
+    });
 
-    const maxAxis = Math.max(size.x, size.y, size.z) || 1;
-    const baseScale = this.blockSize / maxAxis;
-    const scale = baseScale * scaleFactor;
-
-    this.scaleCache.set(cacheKey, scale);
-    return scale;
+    this.materialCache.set(key, material);
+    return material;
   }
 
-  createCenteredModelGroup(baseModel, scale) {
-    const wrapper = new THREE.Group();
-    const model = baseModel.clone(true);
+  buildShapeData(entry) {
+    const halfExtent = this.cellSize / 2;
 
-    model.scale.setScalar(scale);
+    const cellOffsets = entry.cells.map(([x, y, z]) => ({
+      x: x * this.cellSize,
+      y: y * this.cellSize,
+      z: z * this.cellSize,
+    }));
 
-    const box = new THREE.Box3().setFromObject(model);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    let footprintRadius = 0;
 
-    model.position.sub(center);
-    wrapper.add(model);
+    for (const c of cellOffsets) {
+      minX = Math.min(minX, c.x - halfExtent);
+      maxX = Math.max(maxX, c.x + halfExtent);
+      minY = Math.min(minY, c.y - halfExtent);
+      maxY = Math.max(maxY, c.y + halfExtent);
+      minZ = Math.min(minZ, c.z - halfExtent);
+      maxZ = Math.max(maxZ, c.z + halfExtent);
 
-    return wrapper;
+      const r = Math.hypot(c.x, c.z) + halfExtent;
+      if (r > footprintRadius) footprintRadius = r;
+    }
+
+    return {
+      key: entry.key,
+      name: entry.name,
+      color: entry.color,
+      weight: entry.weight,
+      cellOffsets,
+      halfExtent,
+      halfHeight: (maxY - minY) * 0.5,
+      footprintRadius,
+      bounds: {
+        minX,
+        maxX,
+        minY,
+        maxY,
+        minZ,
+        maxZ,
+      },
+    };
   }
 
-  createRenderObject(baseModel, scale) {
-    const wrapper = this.createCenteredModelGroup(baseModel, scale);
-    this.scene.add(wrapper);
-    return wrapper;
+  createShapeGroup(shapeData, options = {}) {
+    const group = new THREE.Group();
+    const geometry = this.getCubeGeometry();
+    const material = this.getMaterial(shapeData.color);
+
+    for (const offset of shapeData.cellOffsets) {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(offset.x, offset.y, offset.z);
+      mesh.castShadow = options.castShadow ?? true;
+      mesh.receiveShadow = options.receiveShadow ?? true;
+      group.add(mesh);
+    }
+
+    group.userData.shapeKey = shapeData.key;
+    group.userData.shapeName = shapeData.name;
+    return group;
+  }
+
+  createRenderObject(shapeData) {
+    const group = this.createShapeGroup(shapeData, {
+      castShadow: true,
+      receiveShadow: true,
+    });
+
+    this.scene.add(group);
+    return group;
   }
 
   async createUiPreviewObject(entry) {
-    if (!entry?.path) return null;
+    if (!entry) return null;
+    const shapeData = this.buildShapeData(entry);
 
-    const baseModel = await this.loadModel(entry.path);
-    const scale = this.getModelScale(
-      baseModel,
-      entry.path,
-      entry.scaleFactor ?? 1.0
-    );
-
-    return this.createCenteredModelGroup(baseModel, scale);
-  }
-
-  extractGeometryFromScene(root) {
-    root.updateMatrixWorld(true);
-
-    const vertices = [];
-    const indices = [];
-    let vertexOffset = 0;
-
-    root.traverse((child) => {
-      if (!child.isMesh || !child.geometry) return;
-
-      const geometry = child.geometry.clone();
-      const pos = geometry.attributes.position;
-      if (!pos) return;
-
-      if (geometry.index) {
-        const indexArray = geometry.index.array;
-
-        for (let i = 0; i < pos.count; i++) {
-          const v = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
-          v.applyMatrix4(child.matrixWorld);
-          vertices.push(v.x, v.y, v.z);
-        }
-
-        for (let i = 0; i < indexArray.length; i++) {
-          indices.push(indexArray[i] + vertexOffset);
-        }
-
-        vertexOffset += pos.count;
-      } else {
-        for (let i = 0; i < pos.count; i++) {
-          const v = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
-          v.applyMatrix4(child.matrixWorld);
-          vertices.push(v.x, v.y, v.z);
-          indices.push(vertexOffset++);
-        }
-      }
+    return this.createShapeGroup(shapeData, {
+      castShadow: false,
+      receiveShadow: false,
     });
-
-    return {
-      vertices: new Float32Array(vertices),
-      indices: new Uint32Array(indices),
-    };
   }
 
-  buildCollisionData(baseModel, modelPath, scale, scaleFactor = 1.0) {
-    const cacheKey = `${modelPath}::${scaleFactor}`;
-
-    if (this.collisionCache.has(cacheKey)) {
-      return this.collisionCache.get(cacheKey);
-    }
-
-    const root = baseModel.clone(true);
-    root.scale.setScalar(scale);
-
-    const box = new THREE.Box3().setFromObject(root);
-    const center = new THREE.Vector3();
-    const size = new THREE.Vector3();
-    box.getCenter(center);
-    box.getSize(size);
-
-    root.position.sub(center);
-    root.updateMatrixWorld(true);
-
-    const data = this.extractGeometryFromScene(root);
-
-    const collisionData = {
-      vertices: data.vertices,
-      indices: data.indices,
-      halfHeight: size.y / 2,
-    };
-
-    this.collisionCache.set(cacheKey, collisionData);
-    return collisionData;
-  }
-
-  createPreviewBody(spawnY, vertices) {
+  createPreviewBody(spawnY, shapeData) {
     const rbDesc = this.RAPIER.RigidBodyDesc.kinematicPositionBased()
       .setTranslation(0, spawnY, 0);
 
     const body = this.world.createRigidBody(rbDesc);
+    const colliders = [];
 
-    let colliderDesc = this.RAPIER.ColliderDesc.convexHull(vertices);
-    if (!colliderDesc) {
-      colliderDesc = this.RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5);
+    for (const offset of shapeData.cellOffsets) {
+      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(
+        shapeData.halfExtent,
+        shapeData.halfExtent,
+        shapeData.halfExtent
+      )
+        .setTranslation(offset.x, offset.y, offset.z)
+        .setFriction(2.1)
+        .setRestitution(0.0)
+        .setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Max)
+        .setRestitutionCombineRule(this.RAPIER.CoefficientCombineRule.Min);
+
+      colliders.push(this.world.createCollider(colliderDesc, body));
     }
 
-    colliderDesc
-      .setFriction(2.0)
-      .setRestitution(0.0)
-      .setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Max)
-      .setRestitutionCombineRule(this.RAPIER.CoefficientCombineRule.Min);
-
-    const collider = this.world.createCollider(colliderDesc, body);
-    return { body, collider };
+    return { body, colliders };
   }
 
-  createDynamicBody(position, rotation, vertices) {
+  createDynamicBody(position, rotation, shapeData) {
     const rbDesc = this.RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(position.x, position.y, position.z)
       .setRotation(rotation)
@@ -317,62 +345,58 @@ export class BlockFactory {
       .setAngularDamping(this.angularDamping);
 
     const body = this.world.createRigidBody(rbDesc);
-
     body.setGravityScale(1, true);
 
     if (typeof body.enableCcd === "function") {
       body.enableCcd(true);
     }
 
-    let colliderDesc = this.RAPIER.ColliderDesc.convexHull(vertices);
-    if (!colliderDesc) {
-      colliderDesc = this.RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5);
+    const colliders = [];
+
+    for (const offset of shapeData.cellOffsets) {
+      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(
+        shapeData.halfExtent,
+        shapeData.halfExtent,
+        shapeData.halfExtent
+      )
+        .setTranslation(offset.x, offset.y, offset.z)
+        .setDensity(0.95)
+        .setFriction(2.35)
+        .setRestitution(0.0)
+        .setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Max)
+        .setRestitutionCombineRule(this.RAPIER.CoefficientCombineRule.Min);
+
+      colliders.push(this.world.createCollider(colliderDesc, body));
     }
-
-    colliderDesc
-      .setFriction(2.2)
-      .setRestitution(0.0)
-      .setDensity(1.0)
-      .setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Max)
-      .setRestitutionCombineRule(this.RAPIER.CoefficientCombineRule.Min);
-
-    const collider = this.world.createCollider(colliderDesc, body);
 
     body.setLinvel({ x: 0, y: -this.fallSpeed, z: 0 }, true);
     body.setAngvel({ x: 0, y: 0, z: 0 }, true);
 
-    return { body, collider };
+    return { body, colliders };
   }
 
   async createPreviewBlock(spawnY, id) {
     const entry = await this.consumeNextModelEntry();
+    const shapeData = this.buildShapeData(entry);
 
-    const modelPath = entry.path;
-    const scaleFactor = entry.scaleFactor ?? 1.0;
-
-    const baseModel = await this.loadModel(modelPath);
-
-    const scale = this.getModelScale(baseModel, modelPath, scaleFactor);
-    const collision = this.buildCollisionData(
-      baseModel,
-      modelPath,
-      scale,
-      scaleFactor
-    );
-    const mesh = this.createRenderObject(baseModel, scale);
-    const preview = this.createPreviewBody(spawnY, collision.vertices);
+    const mesh = this.createRenderObject(shapeData);
+    const preview = this.createPreviewBody(spawnY, shapeData);
 
     return {
       id,
       mesh,
       body: preview.body,
-      collider: preview.collider,
-      halfHeight: collision.halfHeight,
+      collider: preview.colliders[0] ?? null,
+      colliders: preview.colliders,
+      halfHeight: shapeData.halfHeight,
+      footprintRadius: shapeData.footprintRadius,
       state: "preview",
-      collision,
-      modelPath,
-      modelFile: entry.file,
-      scaleFactor,
+      collision: shapeData,
+      modelPath: entry.key,
+      modelFile: entry.name,
+      shapeKey: entry.key,
+      shapeName: entry.name,
+      color: entry.color,
       weight: entry.weight,
       contactFrames: 0,
       stableFrames: 0,
@@ -389,10 +413,11 @@ export class BlockFactory {
 
     this.world.removeRigidBody(block.body);
 
-    const dynamic = this.createDynamicBody(pos, rot, block.collision.vertices);
+    const dynamic = this.createDynamicBody(pos, rot, block.collision);
 
     block.body = dynamic.body;
-    block.collider = dynamic.collider;
+    block.collider = dynamic.colliders[0] ?? null;
+    block.colliders = dynamic.colliders;
     block.state = "falling";
     block.contactFrames = 0;
     block.stableFrames = 0;
@@ -405,7 +430,12 @@ export class BlockFactory {
   }
 
   disposeBlock(block) {
-    this.scene.remove(block.mesh);
-    this.world.removeRigidBody(block.body);
+    if (block?.mesh) {
+      this.scene.remove(block.mesh);
+    }
+
+    if (block?.body) {
+      this.world.removeRigidBody(block.body);
+    }
   }
 }

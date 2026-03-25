@@ -7,16 +7,16 @@ import { PlacementController } from "./PlacementController.js";
 export class Game {
   constructor() {
     this.config = {
-      stageSize: 3,
+      stageSize: 4,
       groundHeight: 0.01,
       stageThickness: 0.12,
       blockSize: 1,
-      previewClampPadding: 0.35,
+      previewClampPadding: 0.25,
 
-      fallSpeed: 2,
+      fallSpeed: 1.6,
 
-      spawnClearance: 1.6,
-      minSpawnHeight: 2.3,
+      spawnClearance: 1.9,
+      minSpawnHeight: 2.8,
 
       heightStep: 0.5,
 
@@ -25,7 +25,7 @@ export class Game {
       cameraMinTargetY: 0.75,
     };
 
-    this.appVersion = "v0.1.19-next-preview-ui";
+    this.appVersion = "v0.2.0-3d-polycube";
 
     this.renderer = new Renderer(this.config);
     this.physics = new Physics(this.config);
@@ -67,12 +67,12 @@ export class Game {
     this.nextPanel = null;
     this.nextNameLabel = null;
     this.nextCanvas = null;
+    this.nextPreviewCanvasWrap = null;
     this.nextPreviewRenderer = null;
     this.nextPreviewScene = null;
     this.nextPreviewCamera = null;
     this.nextPreviewMesh = null;
     this.nextPreviewKey = "";
-this.nextPreviewKey = "";
 
     this.bgmEnabled = true;
     this.bgmUnlocked = false;
@@ -87,7 +87,6 @@ this.nextPreviewKey = "";
     this.loadingStatusLabel = null;
     this.loadingProgressBar = null;
     this.loadingProgressFill = null;
-    this.loadingUiStyleTag = null;
 
     this.isLoading = false;
     this.loadingRafId = null;
@@ -107,91 +106,87 @@ this.nextPreviewKey = "";
   }
 
   getNextPreviewLayout() {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  const isMobile = w <= 768 || h <= 700;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
 
-  if (w <= 420) {
+    if (w <= 420) {
+      return {
+        panelTop: 64,
+        panelRight: 10,
+        panelWidth: 108,
+        panelPadding: 8,
+        panelRadius: 12,
+        canvasSize: 84,
+        canvasPixelSize: 168,
+        titleFont: 10,
+        nameFont: 10,
+        nameMinHeight: 20,
+      };
+    }
+
+    if (w <= 768 || h <= 700) {
+      return {
+        panelTop: 70,
+        panelRight: 12,
+        panelWidth: 128,
+        panelPadding: 10,
+        panelRadius: 14,
+        canvasSize: 98,
+        canvasPixelSize: 196,
+        titleFont: 11,
+        nameFont: 11,
+        nameMinHeight: 24,
+      };
+    }
+
     return {
-      isMobile: true,
-      panelTop: 64,
-      panelRight: 10,
-      panelWidth: 108,
-      panelPadding: 8,
-      panelRadius: 12,
-      canvasSize: 84,
-      canvasPixelSize: 168,
-      titleFont: 10,
-      nameFont: 10,
-      nameMinHeight: 20,
+      panelTop: 72,
+      panelRight: 16,
+      panelWidth: 170,
+      panelPadding: 12,
+      panelRadius: 16,
+      canvasSize: 146,
+      canvasPixelSize: 292,
+      titleFont: 12,
+      nameFont: 12,
+      nameMinHeight: 32,
     };
   }
 
-  if (w <= 768 || h <= 700) {
-    return {
-      isMobile: true,
-      panelTop: 70,
-      panelRight: 12,
-      panelWidth: 128,
-      panelPadding: 10,
-      panelRadius: 14,
-      canvasSize: 98,
-      canvasPixelSize: 196,
-      titleFont: 11,
-      nameFont: 11,
-      nameMinHeight: 24,
-    };
+  applyNextPreviewLayout() {
+    if (!this.nextPanel || !this.nextCanvas || !this.nextNameLabel || !this.nextPreviewCanvasWrap) {
+      return;
+    }
+
+    const layout = this.getNextPreviewLayout();
+
+    this.nextPanel.style.top = `${layout.panelTop}px`;
+    this.nextPanel.style.right = `${layout.panelRight}px`;
+    this.nextPanel.style.width = `${layout.panelWidth}px`;
+    this.nextPanel.style.padding = `${layout.panelPadding}px`;
+    this.nextPanel.style.borderRadius = `${layout.panelRadius}px`;
+
+    this.nextPreviewCanvasWrap.style.width = `${layout.canvasSize}px`;
+    this.nextPreviewCanvasWrap.style.height = `${layout.canvasSize}px`;
+
+    this.nextCanvas.width = layout.canvasPixelSize;
+    this.nextCanvas.height = layout.canvasPixelSize;
+    this.nextCanvas.style.width = `${layout.canvasSize}px`;
+    this.nextCanvas.style.height = `${layout.canvasSize}px`;
+
+    this.nextNameLabel.style.fontSize = `${layout.nameFont}px`;
+    this.nextNameLabel.style.minHeight = `${layout.nameMinHeight}px`;
+
+    const title = this.nextPanel.querySelector(".next-preview-title");
+    if (title) {
+      title.style.fontSize = `${layout.titleFont}px`;
+    }
+
+    if (this.nextPreviewRenderer) {
+      this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
+    }
   }
-
-  return {
-    isMobile: false,
-    panelTop: 72,
-    panelRight: 16,
-    panelWidth: 170,
-    panelPadding: 12,
-    panelRadius: 16,
-    canvasSize: 146,
-    canvasPixelSize: 292,
-    titleFont: 12,
-    nameFont: 12,
-    nameMinHeight: 32,
-  };
-}
-
-applyNextPreviewLayout() {
-  if (!this.nextPanel || !this.nextCanvas || !this.nextNameLabel || !this.nextPreviewCanvasWrap) {
-    return;
-  }
-
-  const layout = this.getNextPreviewLayout();
-
-  this.nextPanel.style.top = `${layout.panelTop}px`;
-  this.nextPanel.style.right = `${layout.panelRight}px`;
-  this.nextPanel.style.width = `${layout.panelWidth}px`;
-  this.nextPanel.style.padding = `${layout.panelPadding}px`;
-  this.nextPanel.style.borderRadius = `${layout.panelRadius}px`;
-
-  this.nextPreviewCanvasWrap.style.width = `${layout.canvasSize}px`;
-  this.nextPreviewCanvasWrap.style.height = `${layout.canvasSize}px`;
-
-  this.nextCanvas.width = layout.canvasPixelSize;
-  this.nextCanvas.height = layout.canvasPixelSize;
-  this.nextCanvas.style.width = `${layout.canvasSize}px`;
-  this.nextCanvas.style.height = `${layout.canvasSize}px`;
-
-  this.nextNameLabel.style.fontSize = `${layout.nameFont}px`;
-  this.nextNameLabel.style.minHeight = `${layout.nameMinHeight}px`;
-
-  const title = this.nextPanel.querySelector(".next-preview-title");
-  if (title) {
-    title.style.fontSize = `${layout.titleFont}px`;
-  }
-
-  if (this.nextPreviewRenderer) {
-    this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
-  }
-}
 
   createLoadingScreen() {
     let overlay = document.getElementById("loadingOverlay");
@@ -255,7 +250,6 @@ applyNextPreviewLayout() {
     progressBar.style.borderRadius = "999px";
     progressBar.style.overflow = "hidden";
     progressBar.style.background = "rgba(255,255,255,0.16)";
-    progressBar.style.marginBottom = "0";
 
     const progressFill = document.createElement("div");
     progressFill.id = "loadingProgressFill";
@@ -279,72 +273,72 @@ applyNextPreviewLayout() {
     this.loadingProgressFill = progressFill;
   }
 
- createNextPreviewUI() {
-  let panel = document.getElementById("nextBlockPanel");
-  const layout = this.getNextPreviewLayout();
+  createNextPreviewUI() {
+    let panel = document.getElementById("nextBlockPanel");
+    const layout = this.getNextPreviewLayout();
 
-  if (!panel) {
-    panel = document.createElement("div");
-    panel.id = "nextBlockPanel";
-    panel.style.position = "fixed";
-    panel.style.zIndex = "20";
-    panel.style.color = "white";
-    panel.style.userSelect = "none";
-    panel.style.webkitUserSelect = "none";
-    panel.style.background = "rgba(0,0,0,0.48)";
-    panel.style.backdropFilter = "blur(8px)";
-    panel.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
-    panel.style.border = "1px solid rgba(255,255,255,0.10)";
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "nextBlockPanel";
+      panel.style.position = "fixed";
+      panel.style.zIndex = "20";
+      panel.style.color = "white";
+      panel.style.userSelect = "none";
+      panel.style.webkitUserSelect = "none";
+      panel.style.background = "rgba(0,0,0,0.48)";
+      panel.style.backdropFilter = "blur(8px)";
+      panel.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
+      panel.style.border = "1px solid rgba(255,255,255,0.10)";
 
-    const title = document.createElement("div");
-    title.className = "next-preview-title";
-    title.textContent = "NEXT";
-    title.style.fontWeight = "700";
-    title.style.letterSpacing = "1.2px";
-    title.style.opacity = "0.82";
-    title.style.marginBottom = "8px";
+      const title = document.createElement("div");
+      title.className = "next-preview-title";
+      title.textContent = "NEXT";
+      title.style.fontWeight = "700";
+      title.style.letterSpacing = "1.2px";
+      title.style.opacity = "0.82";
+      title.style.marginBottom = "8px";
 
-    const canvasWrap = document.createElement("div");
-    canvasWrap.id = "nextPreviewCanvasWrap";
-    canvasWrap.style.borderRadius = "12px";
-    canvasWrap.style.overflow = "hidden";
-    canvasWrap.style.background =
-      "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 52%, rgba(255,255,255,0.01) 100%)";
-    canvasWrap.style.border = "1px solid rgba(255,255,255,0.08)";
-    canvasWrap.style.marginBottom = "8px";
+      const canvasWrap = document.createElement("div");
+      canvasWrap.id = "nextPreviewCanvasWrap";
+      canvasWrap.style.borderRadius = "12px";
+      canvasWrap.style.overflow = "hidden";
+      canvasWrap.style.background =
+        "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 52%, rgba(255,255,255,0.01) 100%)";
+      canvasWrap.style.border = "1px solid rgba(255,255,255,0.08)";
+      canvasWrap.style.marginBottom = "8px";
 
-    const canvas = document.createElement("canvas");
-    canvas.id = "nextBlockCanvas";
-    canvas.style.display = "block";
+      const canvas = document.createElement("canvas");
+      canvas.id = "nextBlockCanvas";
+      canvas.style.display = "block";
 
-    const name = document.createElement("div");
-    name.id = "nextBlockNameLabel";
-    name.textContent = "-";
-    name.style.textAlign = "center";
-    name.style.opacity = "0.92";
-    name.style.wordBreak = "break-word";
-    name.style.lineHeight = "1.35";
+      const name = document.createElement("div");
+      name.id = "nextBlockNameLabel";
+      name.textContent = "-";
+      name.style.textAlign = "center";
+      name.style.opacity = "0.92";
+      name.style.wordBreak = "break-word";
+      name.style.lineHeight = "1.35";
 
-    canvasWrap.appendChild(canvas);
-    panel.appendChild(title);
-    panel.appendChild(canvasWrap);
-    panel.appendChild(name);
-    document.body.appendChild(panel);
+      canvasWrap.appendChild(canvas);
+      panel.appendChild(title);
+      panel.appendChild(canvasWrap);
+      panel.appendChild(name);
+      document.body.appendChild(panel);
 
-    this.nextCanvas = canvas;
-    this.nextNameLabel = name;
-    this.nextPreviewCanvasWrap = canvasWrap;
-  } else {
-    this.nextCanvas = panel.querySelector("#nextBlockCanvas");
-    this.nextNameLabel = panel.querySelector("#nextBlockNameLabel");
-    this.nextPreviewCanvasWrap = panel.querySelector("#nextPreviewCanvasWrap");
+      this.nextCanvas = canvas;
+      this.nextNameLabel = name;
+      this.nextPreviewCanvasWrap = canvasWrap;
+    } else {
+      this.nextCanvas = panel.querySelector("#nextBlockCanvas");
+      this.nextNameLabel = panel.querySelector("#nextBlockNameLabel");
+      this.nextPreviewCanvasWrap = panel.querySelector("#nextPreviewCanvasWrap");
+    }
+
+    this.nextPanel = panel;
+
+    this.applyNextPreviewLayout();
+    this.initNextPreviewScene();
   }
-
-  this.nextPanel = panel;
-
-  this.applyNextPreviewLayout();
-  this.initNextPreviewScene();
-}
 
   initNextPreviewScene() {
     if (!this.nextCanvas || this.nextPreviewRenderer) return;
@@ -356,8 +350,9 @@ applyNextPreviewLayout() {
     });
 
     this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  const layout = this.getNextPreviewLayout();
-this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
+
+    const layout = this.getNextPreviewLayout();
+    this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
 
     this.nextPreviewScene = new THREE.Scene();
 
@@ -390,8 +385,8 @@ this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
     this.nextPreviewScene.add(floor);
   }
 
-  formatModelName(fileName = "") {
-    return fileName
+  formatModelName(name = "") {
+    return String(name || "")
       .replace(/\.[^/.]+$/, "")
       .replace(/[_-]+/g, " ")
       .replace(/\s+/g, " ")
@@ -404,14 +399,14 @@ this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
     const nextInfo = await this.blockSystem.getNextBlockInfo();
     if (!nextInfo) return;
 
-    const key = `${nextInfo.path}::${nextInfo.scaleFactor ?? 1}`;
+    const key = `${nextInfo.key}::${nextInfo.weight ?? 1}`;
     if (this.nextPreviewKey === key) return;
 
     this.nextPreviewKey = key;
 
     if (this.nextNameLabel) {
       this.nextNameLabel.textContent = this.formatModelName(
-        nextInfo.file ?? nextInfo.path
+        nextInfo.name ?? nextInfo.key
       );
     }
 
@@ -566,7 +561,7 @@ this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
     try {
       this.startLoadingRenderLoop();
 
-      this.setLoadingProgress(0.08, "렌더러 준비 중...");
+      this.setLoadingProgress(0.1, "렌더러 준비 중...");
       await this.renderer.init();
       this.renderer.render();
 
@@ -581,13 +576,13 @@ this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
         this.config
       );
 
-      this.setLoadingProgress(0.68, "다음 블럭 준비 중...");
+      this.setLoadingProgress(0.7, "다음 블럭 준비 중...");
       await this.blockSystem.getNextBlockInfo();
 
-      this.setLoadingProgress(0.75, "첫 블럭 로딩 중...");
+      this.setLoadingProgress(0.8, "첫 블럭 생성 중...");
       await this.blockSystem.createBlock();
 
-      this.setLoadingProgress(0.88, "조작 시스템 연결 중...");
+      this.setLoadingProgress(0.9, "조작 시스템 연결 중...");
       this.placementController = new PlacementController({
         scene: this.renderer.scene,
         camera: this.renderer.camera,
@@ -793,13 +788,13 @@ this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
     this.updateControlButton();
   }
 
-onResize() {
-  if (this.renderer.resize) {
-    this.renderer.resize(window.innerWidth, window.innerHeight);
-  }
+  onResize() {
+    if (this.renderer.resize) {
+      this.renderer.resize(window.innerWidth, window.innerHeight);
+    }
 
-  this.applyNextPreviewLayout();
-}
+    this.applyNextPreviewLayout();
+  }
 
   async handleFail() {
     if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
