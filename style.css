@@ -9,6 +9,11 @@ canvas {
   display: block;
 }
 
+#gameCanvas {
+  width: 100vw;
+  height: 100vh;
+}
+
 #hud {
   position: fixed;
   top: 16px;
@@ -21,6 +26,7 @@ canvas {
   font-size: 18px;
   line-height: 1.6;
 }
+
 
 #mobileControls {
   position: fixed;
@@ -53,6 +59,29 @@ canvas {
   #hud {
     font-size: 15px;
     padding: 10px 12px;
+  }
+
+  #nextPreviewCard {
+    top: 14px;
+    right: 14px;
+    width: 146px;
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  #nextPreviewTitle {
+    font-size: 18px;
+    margin-bottom: 8px;
+  }
+
+  #nextPreviewViewport {
+    height: 124px;
+    border-radius: 12px;
+  }
+
+  #nextPreviewName {
+    margin-top: 8px;
+    font-size: 14px;
   }
 
   #mobileControls {

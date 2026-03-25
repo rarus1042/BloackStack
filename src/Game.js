@@ -146,90 +146,127 @@ export class Game {
   }
 
   getNextPreviewLayout() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
 
-    if (w <= 420) {
-      return {
-        isMobile: true,
-        panelTop: 64,
-        panelRight: 10,
-        panelWidth: 108,
-        panelPadding: 8,
-        panelRadius: 12,
-        canvasSize: 84,
-        canvasPixelSize: 168,
-        titleFont: 10,
-        nameFont: 10,
-        nameMinHeight: 20,
-      };
-    }
-
-    if (w <= 768 || h <= 700) {
-      return {
-        isMobile: true,
-        panelTop: 70,
-        panelRight: 12,
-        panelWidth: 128,
-        panelPadding: 10,
-        panelRadius: 14,
-        canvasSize: 98,
-        canvasPixelSize: 196,
-        titleFont: 11,
-        nameFont: 11,
-        nameMinHeight: 24,
-      };
-    }
-
+  if (w <= 420) {
     return {
-      isMobile: false,
-      panelTop: 72,
-      panelRight: 16,
-      panelWidth: 170,
-      panelPadding: 12,
+      isMobile: true,
+      panelTop: 74,
+      panelRight: 10,
+      panelWidth: 160,
+      panelPadding: 10,
       panelRadius: 16,
-      canvasSize: 146,
-      canvasPixelSize: 292,
-      titleFont: 12,
-      nameFont: 12,
-      nameMinHeight: 32,
+
+      titleBackFont: 22,
+      titleBackTop: -18,
+      titleBackLeft: 42,
+
+      titleFont: 10,
+      titleMarginBottom: 8,
+
+      canvasSize: 110,
+      canvasPixelSize: 220,
+      canvasRadius: 12,
+
+      nameFont: 10,
+      nameMinHeight: 20,
     };
   }
 
-  applyNextPreviewLayout() {
-    if (!this.nextPanel || !this.nextCanvas || !this.nextNameLabel || !this.nextPreviewCanvasWrap) {
-      return;
-    }
+  if (w <= 768 || h <= 700) {
+    return {
+      isMobile: true,
+      panelTop: 82,
+      panelRight: 12,
+      panelWidth: 182,
+      panelPadding: 11,
+      panelRadius: 18,
 
-    const layout = this.getNextPreviewLayout();
+      titleBackFont: 28,
+      titleBackTop: -22,
+      titleBackLeft: 46,
 
-    this.nextPanel.style.top = `${layout.panelTop}px`;
-    this.nextPanel.style.right = `${layout.panelRight}px`;
-    this.nextPanel.style.width = `${layout.panelWidth}px`;
-    this.nextPanel.style.padding = `${layout.panelPadding}px`;
-    this.nextPanel.style.borderRadius = `${layout.panelRadius}px`;
+      titleFont: 11,
+      titleMarginBottom: 9,
 
-    this.nextPreviewCanvasWrap.style.width = `${layout.canvasSize}px`;
-    this.nextPreviewCanvasWrap.style.height = `${layout.canvasSize}px`;
+      canvasSize: 126,
+      canvasPixelSize: 252,
+      canvasRadius: 13,
 
-    this.nextCanvas.width = layout.canvasPixelSize;
-    this.nextCanvas.height = layout.canvasPixelSize;
-    this.nextCanvas.style.width = `${layout.canvasSize}px`;
-    this.nextCanvas.style.height = `${layout.canvasSize}px`;
-
-    this.nextNameLabel.style.fontSize = `${layout.nameFont}px`;
-    this.nextNameLabel.style.minHeight = `${layout.nameMinHeight}px`;
-
-    const title = this.nextPanel.querySelector(".next-preview-title");
-    if (title) {
-      title.style.fontSize = `${layout.titleFont}px`;
-    }
-
-    if (this.nextPreviewRenderer) {
-      this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
-    }
+      nameFont: 11,
+      nameMinHeight: 24,
+    };
   }
+
+  return {
+    isMobile: false,
+    panelTop: 90,
+    panelRight: 18,
+    panelWidth: 208,
+    panelPadding: 12,
+    panelRadius: 20,
+
+    titleBackFont: 34,
+    titleBackTop: -26,
+    titleBackLeft: 52,
+
+    titleFont: 12,
+    titleMarginBottom: 10,
+
+    canvasSize: 146,
+    canvasPixelSize: 292,
+    canvasRadius: 14,
+
+    nameFont: 12,
+    nameMinHeight: 28,
+  };
+}
+
+applyNextPreviewLayout() {
+  if (!this.nextPanel || !this.nextCanvas || !this.nextNameLabel || !this.nextPreviewCanvasWrap) {
+    return;
+  }
+
+  const layout = this.getNextPreviewLayout();
+
+  this.nextPanel.style.top = `${layout.panelTop}px`;
+  this.nextPanel.style.right = `${layout.panelRight}px`;
+  this.nextPanel.style.width = `${layout.panelWidth}px`;
+  this.nextPanel.style.padding = `${layout.panelPadding}px`;
+  this.nextPanel.style.borderRadius = `${layout.panelRadius}px`;
+
+  this.nextPreviewCanvasWrap.style.width = `${layout.canvasSize}px`;
+  this.nextPreviewCanvasWrap.style.height = `${layout.canvasSize}px`;
+  this.nextPreviewCanvasWrap.style.margin = "10px auto 0";
+  this.nextPreviewCanvasWrap.style.display = "flex";
+  this.nextPreviewCanvasWrap.style.alignItems = "center";
+  this.nextPreviewCanvasWrap.style.justifyContent = "center";
+
+  this.nextCanvas.width = layout.canvasPixelSize;
+  this.nextCanvas.height = layout.canvasPixelSize;
+  this.nextCanvas.style.width = `${layout.canvasSize}px`;
+  this.nextCanvas.style.height = `${layout.canvasSize}px`;
+  this.nextCanvas.style.display = "block";
+  this.nextCanvas.style.margin = "0 auto";
+
+  this.nextNameLabel.style.fontSize = `${layout.nameFont}px`;
+  this.nextNameLabel.style.minHeight = `${layout.nameMinHeight}px`;
+  this.nextNameLabel.style.marginTop = "16px";
+  this.nextNameLabel.style.paddingBottom = "4px";
+
+  const title = this.nextPanel.querySelector(".next-preview-title");
+  if (title) {
+    title.style.fontSize = `${layout.titleFont}px`;
+    title.style.textAlign = "center";
+    title.style.marginBottom = "0";
+  }
+
+  if (this.nextPreviewRenderer) {
+    this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
+  }
+}
 
   createLoadingScreen() {
     let overlay = document.getElementById("loadingOverlay");
@@ -316,72 +353,96 @@ export class Game {
     this.loadingProgressFill = progressFill;
   }
 
-  createNextPreviewUI() {
-    let panel = document.getElementById("nextBlockPanel");
-    const layout = this.getNextPreviewLayout();
+ createNextPreviewUI() {
+  let panel = document.getElementById("nextBlockPanel");
 
-    if (!panel) {
-      panel = document.createElement("div");
-      panel.id = "nextBlockPanel";
-      panel.style.position = "fixed";
-      panel.style.zIndex = "20";
-      panel.style.color = "white";
-      panel.style.userSelect = "none";
-      panel.style.webkitUserSelect = "none";
-      panel.style.background = "rgba(0,0,0,0.48)";
-      panel.style.backdropFilter = "blur(8px)";
-      panel.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
-      panel.style.border = "1px solid rgba(255,255,255,0.10)";
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "nextBlockPanel";
+    panel.style.position = "fixed";
+    panel.style.zIndex = "20";
+    panel.style.color = "white";
+    panel.style.userSelect = "none";
+    panel.style.webkitUserSelect = "none";
+    panel.style.boxSizing = "border-box";
+    panel.style.background =
+      "linear-gradient(180deg, rgba(18,40,60,0.88) 0%, rgba(25,52,76,0.92) 100%)";
+    panel.style.backdropFilter = "blur(10px)";
+    panel.style.border = "1px solid rgba(255,255,255,0.10)";
+    panel.style.boxShadow = "0 14px 30px rgba(0,0,0,0.22)";
+    panel.style.overflow = "hidden";
 
-      const title = document.createElement("div");
-      title.className = "next-preview-title";
-      title.textContent = "NEXT";
-      title.style.fontWeight = "700";
-      title.style.letterSpacing = "1.2px";
-      title.style.opacity = "0.82";
-      title.style.marginBottom = "8px";
+    const title = document.createElement("div");
+    title.className = "next-preview-title";
+    title.textContent = "NEXT";
+    title.style.position = "relative";
+    title.style.fontWeight = "900";
+    title.style.letterSpacing = "1px";
+    title.style.lineHeight = "1.1";
+    title.style.color = "rgba(255,255,255,0.98)";
+    title.style.textAlign = "center";
+    title.style.zIndex = "1";
+    panel.appendChild(title);
 
-      const canvasWrap = document.createElement("div");
-      canvasWrap.id = "nextPreviewCanvasWrap";
-      canvasWrap.style.borderRadius = "12px";
-      canvasWrap.style.overflow = "hidden";
-      canvasWrap.style.background =
-        "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 52%, rgba(255,255,255,0.01) 100%)";
-      canvasWrap.style.border = "1px solid rgba(255,255,255,0.08)";
-      canvasWrap.style.marginBottom = "8px";
+    const canvasWrap = document.createElement("div");
+    canvasWrap.id = "nextPreviewCanvasWrap";
+    canvasWrap.style.position = "relative";
+    canvasWrap.style.overflow = "hidden";
+    canvasWrap.style.borderRadius = "14px";
+    canvasWrap.style.background =
+      "radial-gradient(circle at 50% 28%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 46%, rgba(255,255,255,0.015) 100%)";
+    canvasWrap.style.border = "1px solid rgba(255,255,255,0.08)";
+    canvasWrap.style.boxShadow =
+      "inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -18px 30px rgba(0,0,0,0.08)";
 
-      const canvas = document.createElement("canvas");
-      canvas.id = "nextBlockCanvas";
-      canvas.style.display = "block";
+    const floorGlow = document.createElement("div");
+    floorGlow.style.position = "absolute";
+    floorGlow.style.left = "50%";
+    floorGlow.style.bottom = "0";
+    floorGlow.style.width = "112%";
+    floorGlow.style.height = "34%";
+    floorGlow.style.transform = "translateX(-50%)";
+    floorGlow.style.borderRadius = "50% 50% 0 0 / 90% 90% 0 0";
+    floorGlow.style.background =
+      "radial-gradient(circle at 50% 100%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.05) 45%, rgba(255,255,255,0.00) 75%)";
+    floorGlow.style.pointerEvents = "none";
+    canvasWrap.appendChild(floorGlow);
 
-      const name = document.createElement("div");
-      name.id = "nextBlockNameLabel";
-      name.textContent = "-";
-      name.style.textAlign = "center";
-      name.style.opacity = "0.92";
-      name.style.wordBreak = "break-word";
-      name.style.lineHeight = "1.35";
+    const canvas = document.createElement("canvas");
+    canvas.id = "nextBlockCanvas";
+    canvas.style.position = "relative";
+    canvas.style.zIndex = "1";
+    canvas.style.display = "block";
+    canvas.style.margin = "0 auto";
+    canvasWrap.appendChild(canvas);
 
-      canvasWrap.appendChild(canvas);
-      panel.appendChild(title);
-      panel.appendChild(canvasWrap);
-      panel.appendChild(name);
-      document.body.appendChild(panel);
+    const name = document.createElement("div");
+    name.id = "nextBlockNameLabel";
+    name.textContent = "-";
+    name.style.textAlign = "center";
+    name.style.fontWeight = "700";
+    name.style.letterSpacing = "0.2px";
+    name.style.opacity = "0.96";
+    name.style.wordBreak = "break-word";
+    name.style.lineHeight = "1.3";
 
-      this.nextCanvas = canvas;
-      this.nextNameLabel = name;
-      this.nextPreviewCanvasWrap = canvasWrap;
-    } else {
-      this.nextCanvas = panel.querySelector("#nextBlockCanvas");
-      this.nextNameLabel = panel.querySelector("#nextBlockNameLabel");
-      this.nextPreviewCanvasWrap = panel.querySelector("#nextPreviewCanvasWrap");
-    }
+    panel.appendChild(canvasWrap);
+    panel.appendChild(name);
+    document.body.appendChild(panel);
 
-    this.nextPanel = panel;
-    this.applyNextPreviewLayout();
-    this.initNextPreviewScene();
+    this.nextCanvas = canvas;
+    this.nextNameLabel = name;
+    this.nextPreviewCanvasWrap = canvasWrap;
+  } else {
+    this.nextCanvas = panel.querySelector("#nextBlockCanvas");
+    this.nextNameLabel = panel.querySelector("#nextBlockNameLabel");
+    this.nextPreviewCanvasWrap = panel.querySelector("#nextPreviewCanvasWrap");
   }
 
+  this.nextPanel = panel;
+  this.applyNextPreviewLayout();
+  this.initNextPreviewScene();
+}
   initNextPreviewScene() {
     if (!this.nextCanvas || this.nextPreviewRenderer) return;
 
@@ -398,7 +459,7 @@ export class Game {
     this.nextPreviewScene = new THREE.Scene();
 
     this.nextPreviewCamera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
-    this.nextPreviewCamera.position.set(0, 0.7, 4.2);
+    this.nextPreviewCamera.position.set(0, 0.7, 6);
     this.nextPreviewCamera.lookAt(0, 0, 0);
 
     const ambient = new THREE.AmbientLight(0xffffff, 1.0);
@@ -1259,14 +1320,14 @@ clearRotationGhost() {
       button.type = "button";
       button.style.position = "fixed";
       button.style.top = "16px";
-      button.style.right = "16px";
+      button.style.right = "18px";
       button.style.zIndex = "20";
-      button.style.padding = "10px 14px";
+      button.style.padding = "8px 14px";
       button.style.border = "0";
       button.style.borderRadius = "12px";
       button.style.background = "rgba(0,0,0,0.55)";
       button.style.color = "#fff";
-      button.style.fontSize = "14px";
+      button.style.fontSize = "13px";
       button.style.fontWeight = "600";
       button.style.cursor = "pointer";
       button.style.backdropFilter = "blur(6px)";
