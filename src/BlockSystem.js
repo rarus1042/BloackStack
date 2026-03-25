@@ -24,10 +24,6 @@ export class BlockSystem {
     this.minSpawnHeight = options.minSpawnHeight ?? 2.3;
     this.previewClampPadding = options.previewClampPadding ?? 0.35;
 
-    this.spawnQuaternionA = new THREE.Quaternion();
-this.spawnQuaternionB = new THREE.Quaternion();
-this.spawnQuaternionC = new THREE.Quaternion();
-
     this.liveHeight = 0;
     this.stableHeight = 0;
     this.heightStep = options.heightStep ?? 0.5;
@@ -77,6 +73,17 @@ this.spawnQuaternionC = new THREE.Quaternion();
     });
 
     this.meshSync = new BlockMeshSync();
+
+    this.worldAxisX = new THREE.Vector3(1, 0, 0);
+    this.worldAxisY = new THREE.Vector3(0, 1, 0);
+    this.worldAxisZ = new THREE.Vector3(0, 0, 1);
+
+    this.tmpVecA = new THREE.Vector3();
+    this.tmpVecB = new THREE.Vector3();
+    this.tmpVecC = new THREE.Vector3();
+    this.tmpVecD = new THREE.Vector3();
+
+    this.predictionCoarsePos = new THREE.Vector3();
   }
 
   async createBlock() {
@@ -94,10 +101,10 @@ this.spawnQuaternionC = new THREE.Quaternion();
         this.waitingBlockId++
       );
 
-  this.previewX = 0;
-this.previewY = spawnY;
-this.previewZ = 0;
-this.previewQuaternion.copy(this.getRandomRightAngleQuaternion());
+      this.previewX = 0;
+      this.previewY = spawnY;
+      this.previewZ = 0;
+      this.previewQuaternion.identity();
 
       this.currentBlock = block;
       this.blocks.push(block);
@@ -112,35 +119,6 @@ this.previewQuaternion.copy(this.getRandomRightAngleQuaternion());
   async getNextBlockInfo() {
     return this.factory.peekNextModelEntry();
   }
-
-  getRandomRightAngleQuaternion() {
-  const quarterTurn = Math.PI / 2;
-
-  const xTurns = Math.floor(Math.random() * 4);
-  const yTurns = Math.floor(Math.random() * 4);
-  const zTurns = Math.floor(Math.random() * 4);
-
-  const qx = this.spawnQuaternionA.setFromAxisAngle(
-    new THREE.Vector3(1, 0, 0),
-    xTurns * quarterTurn
-  );
-
-  const qy = this.spawnQuaternionB.setFromAxisAngle(
-    new THREE.Vector3(0, 1, 0),
-    yTurns * quarterTurn
-  );
-
-  const qz = this.spawnQuaternionC.setFromAxisAngle(
-    new THREE.Vector3(0, 0, 1),
-    zTurns * quarterTurn
-  );
-
-  return new THREE.Quaternion()
-    .copy(qy)
-    .multiply(qx)
-    .multiply(qz)
-    .normalize();
-}
 
   quantizeHeightUp(height) {
     const step = this.heightStep;
@@ -335,5 +313,352 @@ this.previewQuaternion.copy(this.getRandomRightAngleQuaternion());
 
   isStructureStable() {
     return this.state !== "WAITING";
+  }
+
+  getPlacementPrediction() {
+    const block = this.getCurrentPreviewBlock();
+    if (!block?.collision) return null;
+
+    const startPosition = new THREE.Vector3(
+      this.previewX,
+      this.previewY,
+      this.previewZ
+    );
+
+    return this.computePlacementPrediction(
+      block,
+      startPosition,
+      this.previewQuaternion
+    );
+  }
+
+  computePlacementPrediction(block, startPosition, quaternion) {
+    const shapeData = block?.collision;
+    if (!shapeData?.cellOffsets?.length) return null;
+
+    const groundTopY = 0;
+    const coarseStep = Math.max(0.035, shapeData.halfExtent * 0.42);
+    const searchMinY = Math.min(this.failY - 1.0, groundTopY - 3.0);
+
+    if (this.collidesShapeAt(startPosition, quaternion, shapeData, block)) {
+      const currentExtents = this.getShapeVerticalExtents(
+        startPosition,
+        quaternion,
+        shapeData
+      );
+
+      return {
+        position: startPosition.clone(),
+        quaternion: quaternion.clone(),
+        currentBottomY: currentExtents.minY,
+        predictedBottomY: currentExtents.minY,
+        hitPoint: new THREE.Vector3(
+          startPosition.x,
+          currentExtents.minY,
+          startPosition.z
+        ),
+      };
+    }
+
+    const currentExtents = this.getShapeVerticalExtents(
+      startPosition,
+      quaternion,
+      shapeData
+    );
+
+    let lastFreeY = startPosition.y;
+    let hitY = null;
+
+    for (
+      let y = startPosition.y - coarseStep;
+      y >= searchMinY;
+      y -= coarseStep
+    ) {
+      this.predictionCoarsePos.set(startPosition.x, y, startPosition.z);
+
+      if (this.collidesShapeAt(this.predictionCoarsePos, quaternion, shapeData, block)) {
+        hitY = y;
+        break;
+      }
+
+      lastFreeY = y;
+    }
+
+    if (hitY === null) {
+      return null;
+    }
+
+    let low = hitY;
+    let high = lastFreeY;
+
+    for (let i = 0; i < 12; i++) {
+      const mid = (low + high) * 0.5;
+      this.predictionCoarsePos.set(startPosition.x, mid, startPosition.z);
+
+      if (this.collidesShapeAt(this.predictionCoarsePos, quaternion, shapeData, block)) {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+
+    const finalPosition = new THREE.Vector3(
+      startPosition.x,
+      high,
+      startPosition.z
+    );
+
+    const finalExtents = this.getShapeVerticalExtents(
+      finalPosition,
+      quaternion,
+      shapeData
+    );
+
+    return {
+      position: finalPosition,
+      quaternion: quaternion.clone(),
+      currentBottomY: currentExtents.minY,
+      predictedBottomY: finalExtents.minY,
+      hitPoint: new THREE.Vector3(
+        finalPosition.x,
+        finalExtents.minY,
+        finalPosition.z
+      ),
+    };
+  }
+
+  collidesShapeAt(position, quaternion, shapeData, ignoreBlock = null) {
+    const currentExtents = this.getShapeVerticalExtents(
+      position,
+      quaternion,
+      shapeData
+    );
+
+    if (currentExtents.minY <= 0) {
+      return true;
+    }
+
+    const axesA = this.getQuaternionAxes(quaternion);
+    const cellsA = this.getWorldCellCenters(position, quaternion, shapeData);
+
+    for (const other of this.blocks) {
+      if (!other || other === ignoreBlock) continue;
+      if (other.state === "preview") continue;
+      if (!other.collision?.cellOffsets?.length) continue;
+
+      const otherPosRaw = other.body.translation();
+      const otherRotRaw = other.body.rotation();
+
+      const otherPos = new THREE.Vector3(otherPosRaw.x, otherPosRaw.y, otherPosRaw.z);
+      const otherQuat = new THREE.Quaternion(
+        otherRotRaw.x,
+        otherRotRaw.y,
+        otherRotRaw.z,
+        otherRotRaw.w
+      );
+
+      const approxRange =
+        (shapeData.footprintRadius ?? 0) +
+        (other.collision.footprintRadius ?? 0) +
+        shapeData.halfExtent +
+        other.collision.halfExtent +
+        0.05;
+
+      const dx = otherPos.x - position.x;
+      const dz = otherPos.z - position.z;
+
+      if (dx * dx + dz * dz > approxRange * approxRange) {
+        continue;
+      }
+
+      const otherExtents = this.getShapeVerticalExtents(
+        otherPos,
+        otherQuat,
+        other.collision
+      );
+
+      if (
+        currentExtents.maxY < otherExtents.minY - 0.02 ||
+        currentExtents.minY > otherExtents.maxY + 0.02
+      ) {
+        continue;
+      }
+
+      const axesB = this.getQuaternionAxes(otherQuat);
+      const cellsB = this.getWorldCellCenters(otherPos, otherQuat, other.collision);
+
+      for (let i = 0; i < cellsA.length; i++) {
+        const centerA = cellsA[i];
+
+        for (let j = 0; j < cellsB.length; j++) {
+          const centerB = cellsB[j];
+
+          if (
+            this.obbIntersects(
+              centerA,
+              axesA,
+              shapeData.halfExtent,
+              centerB,
+              axesB,
+              other.collision.halfExtent
+            )
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  getShapeVerticalExtents(position, quaternion, shapeData) {
+    const axes = this.getQuaternionAxes(quaternion);
+    const verticalHalfSpan =
+      shapeData.halfExtent *
+      (
+        Math.abs(axes[0].y) +
+        Math.abs(axes[1].y) +
+        Math.abs(axes[2].y)
+      );
+
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (const offset of shapeData.cellOffsets) {
+      const center = this.transformLocalOffset(position, quaternion, offset);
+      minY = Math.min(minY, center.y - verticalHalfSpan);
+      maxY = Math.max(maxY, center.y + verticalHalfSpan);
+    }
+
+    return { minY, maxY };
+  }
+
+  getWorldCellCenters(position, quaternion, shapeData) {
+    const centers = [];
+
+    for (const offset of shapeData.cellOffsets) {
+      centers.push(this.transformLocalOffset(position, quaternion, offset));
+    }
+
+    return centers;
+  }
+
+  transformLocalOffset(position, quaternion, offset) {
+    return new THREE.Vector3(offset.x, offset.y, offset.z)
+      .applyQuaternion(quaternion)
+      .add(position);
+  }
+
+  getQuaternionAxes(quaternion) {
+    return [
+      this.worldAxisX.clone().applyQuaternion(quaternion).normalize(),
+      this.worldAxisY.clone().applyQuaternion(quaternion).normalize(),
+      this.worldAxisZ.clone().applyQuaternion(quaternion).normalize(),
+    ];
+  }
+
+  obbIntersects(centerA, axesA, halfA, centerB, axesB, halfB) {
+    const EPSILON = 1e-6;
+
+    const a = [halfA, halfA, halfA];
+    const b = [halfB, halfB, halfB];
+
+    const R = [
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0],
+    ];
+
+    const AbsR = [
+      [0, 0, 0],
+      [0, 0, 0],
+      [0, 0, 0],
+    ];
+
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        R[i][j] = axesA[i].dot(axesB[j]);
+        AbsR[i][j] = Math.abs(R[i][j]) + EPSILON;
+      }
+    }
+
+    const tVec = this.tmpVecA.copy(centerB).sub(centerA);
+    const t = [
+      tVec.dot(axesA[0]),
+      tVec.dot(axesA[1]),
+      tVec.dot(axesA[2]),
+    ];
+
+    let ra = 0;
+    let rb = 0;
+
+    for (let i = 0; i < 3; i++) {
+      ra = a[i];
+      rb =
+        b[0] * AbsR[i][0] +
+        b[1] * AbsR[i][1] +
+        b[2] * AbsR[i][2];
+
+      if (Math.abs(t[i]) > ra + rb) {
+        return false;
+      }
+    }
+
+    for (let j = 0; j < 3; j++) {
+      ra =
+        a[0] * AbsR[0][j] +
+        a[1] * AbsR[1][j] +
+        a[2] * AbsR[2][j];
+      rb = b[j];
+
+      const proj = Math.abs(
+        t[0] * R[0][j] +
+        t[1] * R[1][j] +
+        t[2] * R[2][j]
+      );
+
+      if (proj > ra + rb) {
+        return false;
+      }
+    }
+
+    ra = a[1] * AbsR[2][0] + a[2] * AbsR[1][0];
+    rb = b[1] * AbsR[0][2] + b[2] * AbsR[0][1];
+    if (Math.abs(t[2] * R[1][0] - t[1] * R[2][0]) > ra + rb) return false;
+
+    ra = a[1] * AbsR[2][1] + a[2] * AbsR[1][1];
+    rb = b[0] * AbsR[0][2] + b[2] * AbsR[0][0];
+    if (Math.abs(t[2] * R[1][1] - t[1] * R[2][1]) > ra + rb) return false;
+
+    ra = a[1] * AbsR[2][2] + a[2] * AbsR[1][2];
+    rb = b[0] * AbsR[0][1] + b[1] * AbsR[0][0];
+    if (Math.abs(t[2] * R[1][2] - t[1] * R[2][2]) > ra + rb) return false;
+
+    ra = a[0] * AbsR[2][0] + a[2] * AbsR[0][0];
+    rb = b[1] * AbsR[1][2] + b[2] * AbsR[1][1];
+    if (Math.abs(t[0] * R[2][0] - t[2] * R[0][0]) > ra + rb) return false;
+
+    ra = a[0] * AbsR[2][1] + a[2] * AbsR[0][1];
+    rb = b[0] * AbsR[1][2] + b[2] * AbsR[1][0];
+    if (Math.abs(t[0] * R[2][1] - t[2] * R[0][1]) > ra + rb) return false;
+
+    ra = a[0] * AbsR[2][2] + a[2] * AbsR[0][2];
+    rb = b[0] * AbsR[1][1] + b[1] * AbsR[1][0];
+    if (Math.abs(t[0] * R[2][2] - t[2] * R[0][2]) > ra + rb) return false;
+
+    ra = a[0] * AbsR[1][0] + a[1] * AbsR[0][0];
+    rb = b[1] * AbsR[2][2] + b[2] * AbsR[2][1];
+    if (Math.abs(t[1] * R[0][0] - t[0] * R[1][0]) > ra + rb) return false;
+
+    ra = a[0] * AbsR[1][1] + a[1] * AbsR[0][1];
+    rb = b[0] * AbsR[2][2] + b[2] * AbsR[2][0];
+    if (Math.abs(t[1] * R[0][1] - t[0] * R[1][1]) > ra + rb) return false;
+
+    ra = a[0] * AbsR[1][2] + a[1] * AbsR[0][2];
+    rb = b[0] * AbsR[2][1] + b[1] * AbsR[2][0];
+    if (Math.abs(t[1] * R[0][2] - t[0] * R[1][2]) > ra + rb) return false;
+
+    return true;
   }
 }
