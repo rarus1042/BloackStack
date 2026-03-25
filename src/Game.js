@@ -1043,26 +1043,24 @@ createRotationGhostFromBlock(block) {
   return ghost;
 }
 
-  clearRotationGhost() {
-    if (!this.rotationGhost) {
-      this.rotationGhostAxis = null;
-      return;
-    }
-
-    if (this.rotationGhost.parent) {
-      this.rotationGhost.parent.remove(this.rotationGhost);
-    }
-
-this.rotationGhost.traverse((child) => {
-  if (!child.isMesh || !child.material) return;
-  if ("emissive" in child.material && child.material.emissive instanceof THREE.Color) {
-    child.material.emissive.set(accent);
-  }
-});
-
-    this.rotationGhost = null;
+clearRotationGhost() {
+  if (!this.rotationGhost) {
     this.rotationGhostAxis = null;
+    return;
   }
+
+  if (this.rotationGhost.parent) {
+    this.rotationGhost.parent.remove(this.rotationGhost);
+  }
+
+  this.rotationGhost.traverse((child) => {
+    if (!child.isMesh) return;
+    if (child.material?.dispose) child.material.dispose();
+  });
+
+  this.rotationGhost = null;
+  this.rotationGhostAxis = null;
+}
 
   updateRotationGhost() {
     const axis = this.hoverRotateAxis;
