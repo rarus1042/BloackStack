@@ -107,7 +107,7 @@ export class Game {
     this.joystickMoveSpeed = 2.35;
     this.joystickMaxRadius = 34;
 
-    this.bgmEnabled = true;
+    this.bgmEnabled = false;
     this.bgmUnlocked = false;
     this.bgm = new Audio("./assets/bgm.mp3");
     this.bgm.loop = true;
