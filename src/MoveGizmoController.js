@@ -22,6 +22,11 @@ export class MoveGizmoController {
     this.tempScreenA = new THREE.Vector2();
     this.tempScreenB = new THREE.Vector2();
 
+    this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    this.dragHitPoint = new THREE.Vector3();
+    this.dragStartPoint = new THREE.Vector3();
+    this.dragCurrentPoint = new THREE.Vector3();
+
     this.createHandles();
     this.setActiveAxis(null);
   }
@@ -153,6 +158,41 @@ export class MoveGizmoController {
       this.materials[key].opacity =
         key === axis ? 1.0 : key === "plane" ? 0.18 : 0.85;
     });
+  }
+
+  setDragPlaneHeight(y) {
+    this.dragPlane.set(new THREE.Vector3(0, 1, 0), -y);
+  }
+
+  intersectDragPlane(raycaster, y = 0) {
+    this.setDragPlaneHeight(y);
+    const hit = raycaster.ray.intersectPlane(this.dragPlane, this.dragHitPoint);
+    if (!hit) return null;
+    return this.dragHitPoint.clone();
+  }
+
+  beginDirectDrag(raycaster, blockY = 0) {
+    const hit = this.intersectDragPlane(raycaster, blockY);
+    if (!hit) return null;
+
+    this.dragStartPoint.copy(hit);
+    this.dragCurrentPoint.copy(hit);
+
+    return hit.clone();
+  }
+
+  updateDirectDrag(raycaster, blockY = 0) {
+    const hit = this.intersectDragPlane(raycaster, blockY);
+    if (!hit) return null;
+
+    this.dragCurrentPoint.copy(hit);
+    return hit.clone();
+  }
+
+  endDirectDrag() {
+    this.dragStartPoint.set(0, 0, 0);
+    this.dragCurrentPoint.set(0, 0, 0);
+    this.setActiveAxis(null);
   }
 
   dispose() {

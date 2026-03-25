@@ -1576,7 +1576,7 @@ clearRotationGhost() {
         stageSize: this.config.stageSize,
         previewClampPadding: this.config.previewClampPadding,
         longPressDuration: 380,
-        moveThreshold: 8,
+        moveThreshold: 10,
         rotateSpeed: 0.012,
       });
 

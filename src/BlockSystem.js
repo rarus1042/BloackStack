@@ -141,6 +141,20 @@ export class BlockSystem {
     return this.currentBlock;
   }
 
+  getCurrentPreviewY() {
+    const block = this.getCurrentPreviewBlock();
+    if (!block?.body) return this.previewY;
+    return block.body.translation().y;
+  }
+
+  getCurrentPreviewPosition() {
+    return new THREE.Vector3(this.previewX, this.previewY, this.previewZ);
+  }
+
+  getCurrentPreviewQuaternion() {
+    return this.previewQuaternion.clone();
+  }
+
   clampPreviewPosition(x, z) {
     const radius = Math.max(0, this.stageSize / 2 - this.previewClampPadding);
     const len = Math.hypot(x, z);
@@ -182,6 +196,16 @@ export class BlockSystem {
     this.previewY = this.currentBlock.body.translation().y;
 
     this.applyPreviewTransform();
+  }
+
+  setPreviewPositionFromWorldPoint(worldPoint) {
+    if (!worldPoint) return false;
+    if (!this.currentBlock) return false;
+    if (this.currentBlock.state !== "preview") return false;
+    if (this.state !== "EDIT" && this.state !== "ROTATE") return false;
+
+    this.setPreviewPosition(worldPoint.x, worldPoint.z);
+    return true;
   }
 
   enterRotateMode() {

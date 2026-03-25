@@ -255,6 +255,7 @@ export class PlacementController {
     this.selectedAxis = null;
     this.activePointerId = null;
 
+    this.moveGizmo.endDirectDrag();
     this.rotateGizmo.unlockAxis();
     this.moveGizmo.setActiveAxis(null);
     this.rotateGizmo.setActiveAxis(null);
@@ -288,6 +289,7 @@ export class PlacementController {
     this.moveAxis = null;
     this.selectedAxis = null;
     this.moveGizmo.setActiveAxis(null);
+    this.moveGizmo.endDirectDrag();
   }
 
   shouldCameraBeBlocked() {
@@ -359,6 +361,7 @@ export class PlacementController {
       if (this.isDragging) return;
       if (this.isRotating) return;
       if (this.activePointerId == null) return;
+      if (this.pressTarget !== "BLOCK") return;
 
       this.longPressTriggered = true;
       this.setRotateSelection();
@@ -486,6 +489,59 @@ export class PlacementController {
     this.blockSystem.setPreviewPosition(nextX, nextZ);
   }
 
+  startDirectPlaneDrag(block, event) {
+    if (!block) return false;
+
+    this.updatePointer(event);
+
+    const hit = this.moveGizmo.beginDirectDrag(
+      this.raycaster,
+      block.mesh.position.y
+    );
+
+    if (!hit) return false;
+
+    if (this.selectionMode !== "MOVE") {
+      this.setMoveSelection();
+    }
+
+    this.pressTarget = "BLOCK";
+    this.moveAxis = "plane";
+    this.isDragging = true;
+    this.isRotating = false;
+
+    this.blockSystem.setPreviewPositionFromWorldPoint(hit);
+
+    const previewBlock = this.getPreviewBlock();
+    if (previewBlock) {
+      this.moveGizmo.syncToBlock(previewBlock);
+    }
+
+    return true;
+  }
+
+  continueDirectPlaneDrag(block, event) {
+    if (!block) return false;
+
+    this.updatePointer(event);
+
+    const hit = this.moveGizmo.updateDirectDrag(
+      this.raycaster,
+      block.mesh.position.y
+    );
+
+    if (!hit) return false;
+
+    this.blockSystem.setPreviewPositionFromWorldPoint(hit);
+
+    const previewBlock = this.getPreviewBlock();
+    if (previewBlock) {
+      this.moveGizmo.syncToBlock(previewBlock);
+    }
+
+    return true;
+  }
+
   onPointerDown(event) {
     const block = this.getPreviewBlock();
     if (!block) return;
@@ -562,8 +618,6 @@ export class PlacementController {
           }
         }
 
-        this.beginLongPressToRotate();
-
         if (this.domElement.setPointerCapture) {
           this.domElement.setPointerCapture(event.pointerId);
         }
@@ -634,6 +688,31 @@ export class PlacementController {
       this.clearLongPressTimer();
     }
 
+    if (
+      this.pressTarget === "BLOCK" &&
+      !this.longPressTriggered &&
+      !this.isRotating &&
+      downDistance > this.moveThreshold
+    ) {
+      if (!this.isDragging || this.moveAxis !== "plane") {
+        const started = this.startDirectPlaneDrag(block, event);
+        if (started) {
+          this.lastPointerScreen.copy(currentScreen);
+          this.lockControls();
+          this.consumeEvent(event);
+          return;
+        }
+      } else {
+        const moved = this.continueDirectPlaneDrag(block, event);
+        if (moved) {
+          this.lastPointerScreen.copy(currentScreen);
+          this.lockControls();
+          this.consumeEvent(event);
+          return;
+        }
+      }
+    }
+
     if (this.selectionMode === "NONE") {
       this.lastPointerScreen.copy(currentScreen);
       return;
@@ -662,19 +741,32 @@ export class PlacementController {
       this.updatePointer(event);
 
       if (this.moveAxis === "plane") {
+        const moved = this.continueDirectPlaneDrag(block, event);
+        if (moved) {
+          this.lastPointerScreen.copy(currentScreen);
+          this.lockControls();
+          this.consumeEvent(event);
+          return;
+        }
+      } else if (this.moveAxis === "x" || this.moveAxis === "z") {
+        this.applyAxisMoveFromPointer(block, this.moveAxis, event);
+
+        this.lastPointerScreen.copy(currentScreen);
+        this.lockControls();
+        this.consumeEvent(event);
+        return;
+      } else if (this.moveAxis === "plane") {
         if (this.raycaster.ray.intersectPlane(this.dragPlane, this.hitPoint)) {
           const targetX = this.hitPoint.x + this.dragOffset.x;
           const targetZ = this.hitPoint.z + this.dragOffset.z;
           this.blockSystem.setPreviewPosition(targetX, targetZ);
         }
-      } else {
-        this.applyAxisMoveFromPointer(block, this.moveAxis, event);
-      }
 
-      this.lastPointerScreen.copy(currentScreen);
-      this.lockControls();
-      this.consumeEvent(event);
-      return;
+        this.lastPointerScreen.copy(currentScreen);
+        this.lockControls();
+        this.consumeEvent(event);
+        return;
+      }
     }
 
     this.lastPointerScreen.copy(currentScreen);
@@ -691,10 +783,16 @@ export class PlacementController {
 
     const pressTarget = this.pressTarget;
     const longPressTriggered = this.longPressTriggered;
+    const wasDragging = this.isDragging;
 
     this.clearLongPressTimer();
 
-    if (this.selectionMode === "NONE" && pressTarget === "BLOCK" && !longPressTriggered) {
+    if (
+      this.selectionMode === "NONE" &&
+      pressTarget === "BLOCK" &&
+      !longPressTriggered &&
+      !wasDragging
+    ) {
       if (blockHit && upDistance <= this.moveThreshold) {
         this.setMoveSelection();
         this.lockControls();
@@ -719,6 +817,7 @@ export class PlacementController {
     this.moveAxis = null;
     this.selectedAxis = null;
     this.moveGizmo.setActiveAxis(null);
+    this.moveGizmo.endDirectDrag();
 
     this.rotateGizmo.unlockAxis();
     this.rotateGizmo.setActiveAxis(null);
