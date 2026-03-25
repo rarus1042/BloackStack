@@ -24,6 +24,10 @@ export class BlockSystem {
     this.minSpawnHeight = options.minSpawnHeight ?? 2.3;
     this.previewClampPadding = options.previewClampPadding ?? 0.35;
 
+    this.spawnQuaternionA = new THREE.Quaternion();
+this.spawnQuaternionB = new THREE.Quaternion();
+this.spawnQuaternionC = new THREE.Quaternion();
+
     this.liveHeight = 0;
     this.stableHeight = 0;
     this.heightStep = options.heightStep ?? 0.5;
@@ -90,10 +94,10 @@ export class BlockSystem {
         this.waitingBlockId++
       );
 
-      this.previewX = 0;
-      this.previewY = spawnY;
-      this.previewZ = 0;
-      this.previewQuaternion.identity();
+  this.previewX = 0;
+this.previewY = spawnY;
+this.previewZ = 0;
+this.previewQuaternion.copy(this.getRandomRightAngleQuaternion());
 
       this.currentBlock = block;
       this.blocks.push(block);
@@ -108,6 +112,35 @@ export class BlockSystem {
   async getNextBlockInfo() {
     return this.factory.peekNextModelEntry();
   }
+
+  getRandomRightAngleQuaternion() {
+  const quarterTurn = Math.PI / 2;
+
+  const xTurns = Math.floor(Math.random() * 4);
+  const yTurns = Math.floor(Math.random() * 4);
+  const zTurns = Math.floor(Math.random() * 4);
+
+  const qx = this.spawnQuaternionA.setFromAxisAngle(
+    new THREE.Vector3(1, 0, 0),
+    xTurns * quarterTurn
+  );
+
+  const qy = this.spawnQuaternionB.setFromAxisAngle(
+    new THREE.Vector3(0, 1, 0),
+    yTurns * quarterTurn
+  );
+
+  const qz = this.spawnQuaternionC.setFromAxisAngle(
+    new THREE.Vector3(0, 0, 1),
+    zTurns * quarterTurn
+  );
+
+  return new THREE.Quaternion()
+    .copy(qy)
+    .multiply(qx)
+    .multiply(qz)
+    .normalize();
+}
 
   quantizeHeightUp(height) {
     const step = this.heightStep;
