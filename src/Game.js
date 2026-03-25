@@ -1014,35 +1014,34 @@ export class Game {
     return deltaQuat.multiply(currentQuat).normalize();
   }
 
-  createRotationGhostFromBlock(block) {
-    if (!block?.mesh) return null;
+createRotationGhostFromBlock(block) {
+  if (!block?.mesh) return null;
 
-    const ghost = block.mesh.clone(true);
+  const ghost = block.mesh.clone(true);
 
-    ghost.traverse((child) => {
-      if (!child.isMesh) return;
+  ghost.traverse((child) => {
+    if (!child.isMesh) return;
 
-      if (child.material) {
-        const material = child.material.clone();
-        material.transparent = true;
-        material.opacity = 0.28;
-        material.depthWrite = false;
+    if (child.material) {
+      const material = child.material.clone();
+      material.transparent = true;
+      material.opacity = 0.28;
+      material.depthWrite = false;
 
-        material.emissive =
-          material.emissive instanceof THREE.Color
-            ? material.emissive.clone()
-            : new THREE.Color(0xffffff);
+      if ("emissive" in material && material.emissive instanceof THREE.Color) {
+        material.emissive = material.emissive.clone();
         material.emissiveIntensity = 0.45;
-
-        child.material = material;
       }
 
-      child.renderOrder = 998;
-      child.raycast = () => {};
-    });
+      child.material = material;
+    }
 
-    return ghost;
-  }
+    child.renderOrder = 998;
+    child.raycast = () => {};
+  });
+
+  return ghost;
+}
 
   clearRotationGhost() {
     if (!this.rotationGhost) {
@@ -1054,10 +1053,12 @@ export class Game {
       this.rotationGhost.parent.remove(this.rotationGhost);
     }
 
-    this.rotationGhost.traverse((child) => {
-      if (!child.isMesh) return;
-      if (child.material?.dispose) child.material.dispose();
-    });
+this.rotationGhost.traverse((child) => {
+  if (!child.isMesh || !child.material) return;
+  if ("emissive" in child.material && child.material.emissive instanceof THREE.Color) {
+    child.material.emissive.set(accent);
+  }
+});
 
     this.rotationGhost = null;
     this.rotationGhostAxis = null;
@@ -1559,8 +1560,40 @@ export class Game {
       throw error;
     }
   }
+  triggerLandingEffects() {
+    if (!this.blockSystem?.blocks || !this.renderer) return;
 
-  async animate(time) {
+    for (const block of this.blockSystem.blocks) {
+      if (block.state === "preview") continue;
+
+      if (block.state === "settled" && !block.__landingFxPlayed) {
+        block.__landingFxPlayed = true;
+
+        const pos = block.body.translation();
+        const radius = Math.max(
+          0.34,
+          Math.min(0.72, (block.halfHeight ?? 0.5) * 0.9)
+        );
+
+        this.renderer.spawnLandingEffect(
+          new THREE.Vector3(
+            pos.x,
+            pos.y - (block.halfHeight ?? 0.5) + 0.03,
+            pos.z
+          ),
+          {
+            radius,
+            color: block.primaryColor ?? 0xffd07a,
+          }
+        );
+      }
+
+      if (block.state === "falling" || block.state === "landing") {
+        block.__landingFxPlayed = false;
+      }
+    }
+  }
+    async animate(time) {
     if (!this.isAnimating) return;
 
     requestAnimationFrame(this.animate);
@@ -1576,29 +1609,30 @@ export class Game {
       this.physics.step();
       this.blockSystem.update();
 
-      this.applyJoystickMovement(dt);
+      this.applyJoystickMovement?.(dt);
+      this.triggerLandingEffects();
 
       const followHeight = this.blockSystem.getMaxHeight();
       this.renderer.updateCamera(followHeight);
 
       this.updateHeightUI();
-      this.updateControlButton();
-      this.updateRotateButtonsUI();
-      this.updateJoystickUI();
-      await this.updateNextPreviewUI();
+      this.updateControlButton?.();
+      this.updateRotateButtonsUI?.();
+      this.updateJoystickUI?.();
+      await this.updateNextPreviewUI?.();
     }
 
     if (this.placementController) {
       this.placementController.update();
     }
 
-    this.updateRotationButtonHints();
+    this.updateRotationButtonHints?.();
 
     if (this.renderer.update) {
-      this.renderer.update();
+      this.renderer.update(dt);
     }
 
     this.renderer.render();
-    this.renderNextPreview();
+    this.renderNextPreview?.();
   }
 }

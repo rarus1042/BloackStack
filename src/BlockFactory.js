@@ -14,148 +14,36 @@ export class BlockFactory {
     this.fallSpeed = options.fallSpeed ?? 1.6;
     this.linearDamping = options.linearDamping ?? 2.0;
     this.angularDamping = options.angularDamping ?? 5.8;
+    this.outlineScale = options.outlineScale ?? 1.045;
 
     this.geometryCache = new Map();
     this.materialCache = new Map();
+    this.previewMaterialCache = new Map();
+    this.outlineMaterialCache = new Map();
 
     this.shapeEntries = this.createShapeLibrary();
     this.nextShapeEntry = null;
   }
 
-  createShapeLibrary() {
-    return [
-      {
-        key: "I4",
-        name: "I Bar",
-        color: 0x4fd1ff,
-        weight: 12,
-        cells: [
-          [-1.5, 0, 0],
-          [-0.5, 0, 0],
-          [0.5, 0, 0],
-          [1.5, 0, 0],
-        ],
-      },
-      {
-        key: "O4",
-        name: "Square",
-        color: 0xffd54f,
-        weight: 10,
-        cells: [
-          [-0.5, -0.5, 0],
-          [0.5, -0.5, 0],
-          [-0.5, 0.5, 0],
-          [0.5, 0.5, 0],
-        ],
-      },
-      {
-        key: "L4",
-        name: "L Block",
-        color: 0xff9f43,
-        weight: 12,
-        cells: [
-          [-1, 0, 0],
-          [0, 0, 0],
-          [1, 0, 0],
-          [1, 1, 0],
-        ],
-      },
-      {
-        key: "T4",
-        name: "T Block",
-        color: 0xb084ff,
-        weight: 12,
-        cells: [
-          [-1, 0, 0],
-          [0, 0, 0],
-          [1, 0, 0],
-          [0, 1, 0],
-        ],
-      },
-      {
-        key: "S4",
-        name: "S Block",
-        color: 0x67e08a,
-        weight: 10,
-        cells: [
-          [-1, 0, 0],
-          [0, 0, 0],
-          [0, 1, 0],
-          [1, 1, 0],
-        ],
-      },
-      {
-        key: "Corner3D",
-        name: "3D Corner",
-        color: 0xff6b6b,
-        weight: 12,
-        cells: [
-          [0, 0, 0],
-          [1, 0, 0],
-          [0, 1, 0],
-          [0, 0, 1],
-        ],
-      },
-      {
-        key: "Tripod",
-        name: "Tripod",
-        color: 0x5eead4,
-        weight: 9,
-        cells: [
-          [0, 0, 0],
-          [1, 0, 0],
-          [0, 0, 1],
-          [0, 1, 0],
-        ],
-      },
-      {
-        key: "Pillar3",
-        name: "Pillar",
-        color: 0xe879f9,
-        weight: 8,
-        cells: [
-          [0, -1, 0],
-          [0, 0, 0],
-          [0, 1, 0],
-        ],
-      },
-      {
-        key: "Bridge",
-        name: "Bridge",
-        color: 0x60a5fa,
-        weight: 9,
-        cells: [
-          [-1, 0, 0],
-          [0, 0, 0],
-          [1, 0, 0],
-          [0, 1, 0],
-          [0, 0, 1],
-        ],
-      },
-      {
-        key: "Step3D",
-        name: "3D Step",
-        color: 0xf472b6,
-        weight: 10,
-        cells: [
-          [-1, 0, 0],
-          [0, 0, 0],
-          [0, 1, 0],
-          [1, 1, 0],
-          [1, 1, 1],
-        ],
-      },
-    ];
-  }
-
+createShapeLibrary() {
+  return [
+    { key: "I4",       name: "I Bar",      color: 0x27cfff, weight: 12, cells: [[-1.5,0,0],[-0.5,0,0],[0.5,0,0],[1.5,0,0]] },
+    { key: "O4",       name: "Square",     color: 0xffc928, weight: 10, cells: [[-0.5,-0.5,0],[0.5,-0.5,0],[-0.5,0.5,0],[0.5,0.5,0]] },
+    { key: "L4",       name: "L Block",    color: 0xff8a1f, weight: 12, cells: [[-1,0,0],[0,0,0],[1,0,0],[1,1,0]] },
+    { key: "T4",       name: "T Block",    color: 0xa64dff, weight: 12, cells: [[-1,0,0],[0,0,0],[1,0,0],[0,1,0]] },
+    { key: "S4",       name: "S Block",    color: 0x30d96b, weight: 10, cells: [[-1,0,0],[0,0,0],[0,1,0],[1,1,0]] },
+    { key: "Corner3D", name: "3D Corner",  color: 0xff4d57, weight: 12, cells: [[0,0,0],[1,0,0],[0,1,0],[0,0,1]] },
+    { key: "Tripod",   name: "Tripod",     color: 0x18d7c3, weight: 9,  cells: [[0,0,0],[1,0,0],[0,0,1],[0,1,0]] },
+    { key: "Pillar3",  name: "Pillar",     color: 0xe14cff, weight: 8,  cells: [[0,-1,0],[0,0,0],[0,1,0]] },
+    { key: "Bridge",   name: "Bridge",     color: 0x2f8fff, weight: 9,  cells: [[-1,0,0],[0,0,0],[1,0,0],[0,1,0],[0,0,1]] },
+    { key: "Step3D",   name: "3D Step",    color: 0xff4fb2, weight: 10, cells: [[-1,0,0],[0,0,0],[0,1,0],[1,1,0],[1,1,1]] },
+  ];
+}
   getWeightedRandomEntry() {
     let totalWeight = 0;
-    for (const entry of this.shapeEntries) {
-      totalWeight += entry.weight ?? 1;
-    }
+    for (const entry of this.shapeEntries) totalWeight += entry.weight ?? 1;
 
     let r = Math.random() * totalWeight;
-
     for (const entry of this.shapeEntries) {
       r -= entry.weight ?? 1;
       if (r <= 0) {
@@ -180,9 +68,7 @@ export class BlockFactory {
   }
 
   async ensureNextModelEntry() {
-    if (!this.nextShapeEntry) {
-      this.nextShapeEntry = this.getWeightedRandomEntry();
-    }
+    if (!this.nextShapeEntry) this.nextShapeEntry = this.getWeightedRandomEntry();
     return this.nextShapeEntry;
   }
 
@@ -198,9 +84,7 @@ export class BlockFactory {
 
   getCubeGeometry() {
     const key = `cube-${this.cellSize}-${this.visualCellScale}`;
-    if (this.geometryCache.has(key)) {
-      return this.geometryCache.get(key);
-    }
+    if (this.geometryCache.has(key)) return this.geometryCache.get(key);
 
     const size = this.cellSize * this.visualCellScale;
     const geometry = new THREE.BoxGeometry(size, size, size);
@@ -208,19 +92,65 @@ export class BlockFactory {
     return geometry;
   }
 
-  getMaterial(color) {
-    const key = `${color}`;
-    if (this.materialCache.has(key)) {
-      return this.materialCache.get(key);
-    }
+getMaterial(color) {
+  const key = `normal-${color}`;
+  if (this.materialCache.has(key)) return this.materialCache.get(key);
+
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.72,
+    metalness: 0.06,
+  });
+
+  this.materialCache.set(key, material);
+  return material;
+}
+
+getPreviewMaterial(color) {
+  const key = `preview-${color}`;
+  if (this.previewMaterialCache.has(key)) return this.previewMaterialCache.get(key);
+
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.72,
+    metalness: 0.06,
+    transparent: true,
+    opacity: 0.92,
+  });
+
+  this.previewMaterialCache.set(key, material);
+  return material;
+}
+
+  getPreviewMaterial(color) {
+    const key = `preview-${color}`;
+    if (this.previewMaterialCache.has(key)) return this.previewMaterialCache.get(key);
 
     const material = new THREE.MeshStandardMaterial({
       color,
       roughness: 0.86,
       metalness: 0.04,
+      transparent: true,
+      opacity: 0.92,
     });
 
-    this.materialCache.set(key, material);
+    this.previewMaterialCache.set(key, material);
+    return material;
+  }
+
+  getOutlineMaterial(isPreview = false) {
+    const key = isPreview ? "outline-preview" : "outline-normal";
+    if (this.outlineMaterialCache.has(key)) return this.outlineMaterialCache.get(key);
+
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x111111,
+      side: THREE.BackSide,
+      transparent: true,
+      opacity: isPreview ? 0.18 : 0.92,
+      depthWrite: false,
+    });
+
+    this.outlineMaterialCache.set(key, material);
     return material;
   }
 
@@ -233,12 +163,9 @@ export class BlockFactory {
       z: z * this.cellSize,
     }));
 
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let minZ = Infinity, maxZ = -Infinity;
     let footprintRadius = 0;
 
     for (const c of cellOffsets) {
@@ -262,27 +189,39 @@ export class BlockFactory {
       halfExtent,
       halfHeight: (maxY - minY) * 0.5,
       footprintRadius,
-      bounds: {
-        minX,
-        maxX,
-        minY,
-        maxY,
-        minZ,
-        maxZ,
-      },
+      bounds: { minX, maxX, minY, maxY, minZ, maxZ },
     };
+  }
+
+  addOutlineToMesh(mesh, isPreview = false) {
+    if (!mesh?.geometry) return;
+    if (mesh.userData.__outlineAdded) return;
+
+    const outline = new THREE.Mesh(mesh.geometry, this.getOutlineMaterial(isPreview));
+    outline.name = "__outline";
+    outline.scale.setScalar(this.outlineScale);
+    outline.renderOrder = 1;
+    outline.raycast = () => {};
+    mesh.add(outline);
+
+    mesh.userData.__outlineAdded = true;
   }
 
   createShapeGroup(shapeData, options = {}) {
     const group = new THREE.Group();
     const geometry = this.getCubeGeometry();
-    const material = this.getMaterial(shapeData.color);
+    const material = options.isPreview
+      ? this.getPreviewMaterial(shapeData.color)
+      : this.getMaterial(shapeData.color);
 
     for (const offset of shapeData.cellOffsets) {
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(offset.x, offset.y, offset.z);
-      mesh.castShadow = options.castShadow ?? true;
+      mesh.castShadow = options.castShadow ?? !options.isPreview;
       mesh.receiveShadow = options.receiveShadow ?? true;
+      mesh.renderOrder = 2;
+
+      this.addOutlineToMesh(mesh, !!options.isPreview);
       group.add(mesh);
     }
 
@@ -292,22 +231,24 @@ export class BlockFactory {
   }
 
   createRenderObject(shapeData) {
-    const group = this.createShapeGroup(shapeData, {
+    const wrapper = this.createShapeGroup(shapeData, {
+      isPreview: false,
       castShadow: true,
       receiveShadow: true,
     });
 
-    this.scene.add(group);
-    return group;
+    this.scene.add(wrapper);
+    return wrapper;
   }
 
   async createUiPreviewObject(entry) {
     if (!entry) return null;
-    const shapeData = this.buildShapeData(entry);
 
+    const shapeData = this.buildShapeData(entry);
     return this.createShapeGroup(shapeData, {
+      isPreview: true,
       castShadow: false,
-      receiveShadow: false,
+      receiveShadow: true,
     });
   }
 
@@ -347,9 +288,7 @@ export class BlockFactory {
     const body = this.world.createRigidBody(rbDesc);
     body.setGravityScale(1, true);
 
-    if (typeof body.enableCcd === "function") {
-      body.enableCcd(true);
-    }
+    if (typeof body.enableCcd === "function") body.enableCcd(true);
 
     const colliders = [];
 
@@ -378,7 +317,6 @@ export class BlockFactory {
   async createPreviewBlock(spawnY, id) {
     const entry = await this.consumeNextModelEntry();
     const shapeData = this.buildShapeData(entry);
-
     const mesh = this.createRenderObject(shapeData);
     const preview = this.createPreviewBody(spawnY, shapeData);
 
@@ -404,6 +342,7 @@ export class BlockFactory {
       landingStartY: null,
       landingStartTime: null,
       committed: false,
+      primaryColor: entry.color,
     };
   }
 
@@ -430,12 +369,7 @@ export class BlockFactory {
   }
 
   disposeBlock(block) {
-    if (block?.mesh) {
-      this.scene.remove(block.mesh);
-    }
-
-    if (block?.body) {
-      this.world.removeRigidBody(block.body);
-    }
+    if (block?.mesh) this.scene.remove(block.mesh);
+    if (block?.body) this.world.removeRigidBody(block.body);
   }
 }

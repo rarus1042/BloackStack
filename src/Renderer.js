@@ -85,7 +85,7 @@ export class Renderer {
     this.backgroundTexture = null;
     this.grassTexture = null;
     this.grassNormal = null;
-
+   this.landingEffects = [];
     this.setupLights();
     this.setupFog();
     this.setupStage();
@@ -249,26 +249,26 @@ export class Renderer {
       metalness: 0.0,
     });
 
-    const topMaterial = this.grassTexture
-      ? new THREE.MeshPhysicalMaterial({
-          map: this.grassTexture,
-          normalMap: this.grassNormal || null,
-          normalScale: new THREE.Vector2(2.6, 2.6),
-          roughness: 0.92,
-          metalness: 0.0,
-          clearcoat: 0.06,
-          clearcoatRoughness: 1.0,
-          reflectivity: 0.15,
-          envMapIntensity: 0.0,
-        })
-      : new THREE.MeshPhysicalMaterial({
-          color: 0x63a84a,
-          roughness: 0.95,
-          metalness: 0.0,
-          clearcoat: 0.04,
-          clearcoatRoughness: 1.0,
-          reflectivity: 0.1,
-        });
+const topMaterial = this.grassTexture
+  ? new THREE.MeshPhysicalMaterial({
+      map: this.grassTexture,
+      normalMap: this.grassNormal || null,
+      ...(this.grassNormal ? { normalScale: new THREE.Vector2(2.6, 2.6) } : {}),
+      roughness: 0.92,
+      metalness: 0.0,
+      clearcoat: 0.06,
+      clearcoatRoughness: 1.0,
+      reflectivity: 0.15,
+      envMapIntensity: 0.0,
+    })
+  : new THREE.MeshPhysicalMaterial({
+      color: 0x63a84a,
+      roughness: 0.95,
+      metalness: 0.0,
+      clearcoat: 0.04,
+      clearcoatRoughness: 1.0,
+      reflectivity: 0.1,
+    });
 
     const bottomMaterial = new THREE.MeshStandardMaterial({
       color: 0x5b6a4a,
@@ -340,8 +340,118 @@ export class Renderer {
     this.controls.update();
   }
 
-  update() {
+    spawnLandingEffect(position, options = {}) {
+    const radius = options.radius ?? 0.48;
+    const color = options.color ?? 0xffd07a;
+
+    const root = new THREE.Group();
+    root.position.copy(position);
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius * 0.55, radius * 0.78, 40),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.72,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    root.add(ring);
+
+    const glow = new THREE.Mesh(
+      new THREE.CircleGeometry(radius * 0.7, 36),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.16,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      })
+    );
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.y = 0.005;
+    root.add(glow);
+
+    const particles = [];
+    const particleMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+
+    for (let i = 0; i < 8; i++) {
+      const p = new THREE.Mesh(
+        new THREE.SphereGeometry(0.03, 8, 8),
+        particleMat.clone()
+      );
+
+      const angle = (i / 8) * Math.PI * 2;
+      const speed = radius * (1.1 + Math.random() * 0.45);
+
+      p.position.set(Math.cos(angle) * radius * 0.18, 0.04, Math.sin(angle) * radius * 0.18);
+      p.userData.vx = Math.cos(angle) * speed;
+      p.userData.vz = Math.sin(angle) * speed;
+      p.userData.vy = 0.85 + Math.random() * 0.35;
+
+      root.add(p);
+      particles.push(p);
+    }
+
+    this.scene.add(root);
+
+    this.landingEffects.push({
+      root,
+      ring,
+      glow,
+      particles,
+      elapsed: 0,
+      duration: 0.42,
+      baseRadius: radius,
+    });
+  }
+
+  updateLandingEffects(dt) {
+    if (!this.landingEffects.length) return;
+
+    for (let i = this.landingEffects.length - 1; i >= 0; i--) {
+      const fx = this.landingEffects[i];
+      fx.elapsed += dt;
+
+      const t = Math.min(1, fx.elapsed / fx.duration);
+      const inv = 1 - t;
+
+      fx.ring.scale.setScalar(1 + t * 1.35);
+      fx.glow.scale.setScalar(1 + t * 1.8);
+
+      fx.ring.material.opacity = 0.72 * inv;
+      fx.glow.material.opacity = 0.16 * inv;
+
+      for (const p of fx.particles) {
+        p.position.x += p.userData.vx * dt;
+        p.position.z += p.userData.vz * dt;
+        p.position.y += p.userData.vy * dt;
+        p.userData.vy -= 2.8 * dt;
+        p.material.opacity = 0.85 * inv;
+        p.scale.setScalar(0.75 + inv * 0.75);
+      }
+
+      if (t >= 1) {
+        this.scene.remove(fx.root);
+        fx.root.traverse((obj) => {
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) obj.material.dispose();
+        });
+        this.landingEffects.splice(i, 1);
+      }
+    }
+  }
+  
+  update(dt = 0.016) {
     this.controls.update();
+    this.updateLandingEffects(dt);
   }
 
   render() {
