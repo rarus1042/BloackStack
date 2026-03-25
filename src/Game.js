@@ -3,6 +3,7 @@ import { Renderer } from "./Renderer.js";
 import { Physics } from "./Physics.js";
 import { BlockSystem } from "./BlockSystem.js";
 import { PlacementController } from "./PlacementController.js";
+import { SupabaseRankingService } from "./SupabaseRankingService.js";
 
 export class Game {
   constructor() {
@@ -33,11 +34,28 @@ export class Game {
     this.blockSystem = null;
     this.placementController = null;
 
-    this.nickname = "Player";
-    this.bestHeight = 0;
-    this.lastTime = 0;
-    this.isGameOver = false;
-    this.isRestarting = false;
+this.nickname = "Player";
+this.bestHeight = 0;
+this.lastRank = null;
+this.lastTime = 0;
+this.isGameOver = false;
+this.isRestarting = false;
+
+this.rankingService = new SupabaseRankingService({
+  url: "https://lrnrdkgnngayetdkrmoo.supabase.co",
+  key: "sb_publishable_kF_jTxBiSpZHh4j59N4AZA_nA6rPkOn",
+  table: "leaderboard_scores",
+});
+this.settingsButton = null;
+this.settingsModal = null;
+this.settingsBackdrop = null;
+this.settingsCloseButton = null;
+this.settingsLeaderboardList = null;
+this.settingsLeaderboardStatus = null;
+this.settingsBgmToggleButton = null;
+this.settingsRefreshButton = null;
+this.isSettingsOpen = false;
+this.cachedLeaderboard = [];
 
     this.nicknameLabel = document.getElementById("nicknameLabel");
     this.heightLabel = document.getElementById("heightLabel");
@@ -137,12 +155,13 @@ export class Game {
     this.onJoystickPointerMove = this.onJoystickPointerMove.bind(this);
     this.onJoystickPointerUp = this.onJoystickPointerUp.bind(this);
 
-    this.createLoadingScreen();
-    this.createBgmToggleButton();
-    this.createRotateStepButtons();
-    this.createMoveJoystick();
-    this.createNextPreviewUI();
-    this.setupBgmUnlock();
+this.createLoadingScreen();
+this.createSettingsButton();
+this.createSettingsModal();
+this.createRotateStepButtons();
+this.createMoveJoystick();
+this.createNextPreviewUI();
+this.setupBgmUnlock();
   }
 
   getNextPreviewLayout() {
@@ -1311,43 +1330,318 @@ clearRotationGhost() {
     requestAnimationFrame(this.animate);
   }
 
-  createBgmToggleButton() {
-    let button = document.getElementById("bgmToggleButton");
+  createSettingsButton() {
+  let button = document.getElementById("settingsButton");
 
-    if (!button) {
-      button = document.createElement("button");
-      button.id = "bgmToggleButton";
-      button.type = "button";
-      button.style.position = "fixed";
-      button.style.top = "16px";
-      button.style.right = "18px";
-      button.style.zIndex = "20";
-      button.style.padding = "8px 14px";
-      button.style.border = "0";
-      button.style.borderRadius = "12px";
-      button.style.background = "rgba(0,0,0,0.55)";
-      button.style.color = "#fff";
-      button.style.fontSize = "13px";
-      button.style.fontWeight = "600";
-      button.style.cursor = "pointer";
-      button.style.backdropFilter = "blur(6px)";
-      button.style.boxShadow = "0 6px 18px rgba(0,0,0,0.18)";
-      button.style.userSelect = "none";
-      button.style.webkitUserSelect = "none";
-      document.body.appendChild(button);
+  if (!button) {
+    button = document.createElement("button");
+    button.id = "settingsButton";
+    button.type = "button";
+    button.innerHTML = "⚙";
+    button.style.position = "fixed";
+    button.style.top = "16px";
+    button.style.right = "18px";
+    button.style.zIndex = "30";
+    button.style.width = "46px";
+    button.style.height = "46px";
+    button.style.border = "0";
+    button.style.borderRadius = "14px";
+    button.style.background = "rgba(0,0,0,0.55)";
+    button.style.color = "#fff";
+    button.style.fontSize = "24px";
+    button.style.fontWeight = "700";
+    button.style.cursor = "pointer";
+    button.style.backdropFilter = "blur(6px)";
+    button.style.boxShadow = "0 6px 18px rgba(0,0,0,0.18)";
+    button.style.userSelect = "none";
+    button.style.webkitUserSelect = "none";
+    document.body.appendChild(button);
+  }
+
+  button.addEventListener("click", () => {
+    if (this.isSettingsOpen) {
+      this.closeSettingsModal();
+    } else {
+      this.openSettingsModal();
+    }
+  });
+
+  this.settingsButton = button;
+}
+
+createSettingsModal() {
+  let backdrop = document.getElementById("settingsModalBackdrop");
+  let modal = document.getElementById("settingsModal");
+
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "settingsModalBackdrop";
+    backdrop.style.position = "fixed";
+    backdrop.style.inset = "0";
+    backdrop.style.zIndex = "60";
+    backdrop.style.background = "rgba(0,0,0,0.42)";
+    backdrop.style.backdropFilter = "blur(6px)";
+    backdrop.style.display = "none";
+    backdrop.style.alignItems = "center";
+    backdrop.style.justifyContent = "center";
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        this.closeSettingsModal();
+      }
+    });
+
+    modal = document.createElement("div");
+    modal.id = "settingsModal";
+    modal.style.width = "min(520px, 92vw)";
+    modal.style.maxHeight = "78vh";
+    modal.style.display = "flex";
+    modal.style.flexDirection = "column";
+    modal.style.borderRadius = "18px";
+    modal.style.background = "rgba(16,20,28,0.94)";
+    modal.style.border = "1px solid rgba(255,255,255,0.10)";
+    modal.style.boxShadow = "0 18px 46px rgba(0,0,0,0.30)";
+    modal.style.overflow = "hidden";
+    modal.style.color = "#fff";
+
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.alignItems = "center";
+    header.style.justifyContent = "space-between";
+    header.style.padding = "16px 18px";
+    header.style.borderBottom = "1px solid rgba(255,255,255,0.08)";
+
+    const title = document.createElement("div");
+    title.textContent = "설정";
+    title.style.fontSize = "18px";
+    title.style.fontWeight = "800";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "✕";
+    closeBtn.style.width = "36px";
+    closeBtn.style.height = "36px";
+    closeBtn.style.border = "0";
+    closeBtn.style.borderRadius = "10px";
+    closeBtn.style.background = "rgba(255,255,255,0.10)";
+    closeBtn.style.color = "#fff";
+    closeBtn.style.cursor = "pointer";
+    closeBtn.addEventListener("click", () => this.closeSettingsModal());
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    const body = document.createElement("div");
+    body.style.display = "flex";
+    body.style.flexDirection = "column";
+    body.style.gap = "14px";
+    body.style.padding = "16px 18px";
+    body.style.minHeight = "0";
+
+    const bgmRow = document.createElement("div");
+    bgmRow.style.display = "flex";
+    bgmRow.style.alignItems = "center";
+    bgmRow.style.justifyContent = "space-between";
+    bgmRow.style.padding = "12px 14px";
+    bgmRow.style.borderRadius = "14px";
+    bgmRow.style.background = "rgba(255,255,255,0.05)";
+
+    const bgmLabel = document.createElement("div");
+    bgmLabel.textContent = "BGM";
+
+    const bgmToggle = document.createElement("button");
+    bgmToggle.type = "button";
+    bgmToggle.style.minWidth = "88px";
+    bgmToggle.style.height = "38px";
+    bgmToggle.style.border = "0";
+    bgmToggle.style.borderRadius = "10px";
+    bgmToggle.style.background = "rgba(255,255,255,0.14)";
+    bgmToggle.style.color = "#fff";
+    bgmToggle.style.fontWeight = "700";
+    bgmToggle.style.cursor = "pointer";
+    bgmToggle.addEventListener("click", this.onBgmToggleClick);
+
+    bgmRow.appendChild(bgmLabel);
+    bgmRow.appendChild(bgmToggle);
+
+    const rankHeader = document.createElement("div");
+    rankHeader.style.display = "flex";
+    rankHeader.style.alignItems = "center";
+    rankHeader.style.justifyContent = "space-between";
+    rankHeader.style.gap = "12px";
+
+    const rankTitle = document.createElement("div");
+    rankTitle.textContent = "글로벌 랭킹 TOP 100";
+    rankTitle.style.fontSize = "16px";
+    rankTitle.style.fontWeight = "800";
+
+    const refreshBtn = document.createElement("button");
+    refreshBtn.type = "button";
+    refreshBtn.textContent = "새로고침";
+    refreshBtn.style.height = "34px";
+    refreshBtn.style.padding = "0 12px";
+    refreshBtn.style.border = "0";
+    refreshBtn.style.borderRadius = "10px";
+    refreshBtn.style.background = "rgba(255,255,255,0.12)";
+    refreshBtn.style.color = "#fff";
+    refreshBtn.style.cursor = "pointer";
+    refreshBtn.addEventListener("click", async () => {
+      await this.refreshLeaderboardUI(true);
+    });
+
+    rankHeader.appendChild(rankTitle);
+    rankHeader.appendChild(refreshBtn);
+
+    const rankStatus = document.createElement("div");
+    rankStatus.style.fontSize = "12px";
+    rankStatus.style.opacity = "0.72";
+
+    const rankList = document.createElement("div");
+    rankList.style.display = "flex";
+    rankList.style.flexDirection = "column";
+    rankList.style.gap = "8px";
+    rankList.style.overflowY = "auto";
+    rankList.style.maxHeight = "48vh";
+    rankList.style.paddingRight = "4px";
+
+    body.appendChild(bgmRow);
+    body.appendChild(rankHeader);
+    body.appendChild(rankStatus);
+    body.appendChild(rankList);
+
+    modal.appendChild(header);
+    modal.appendChild(body);
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    this.settingsCloseButton = closeBtn;
+    this.settingsBgmToggleButton = bgmToggle;
+    this.settingsRefreshButton = refreshBtn;
+    this.settingsLeaderboardStatus = rankStatus;
+    this.settingsLeaderboardList = rankList;
+  }
+
+  this.settingsBackdrop = backdrop;
+  this.settingsModal = modal;
+  this.updateSettingsBgmUI();
+}
+
+openSettingsModal() {
+  if (!this.settingsBackdrop) return;
+  this.isSettingsOpen = true;
+  this.settingsBackdrop.style.display = "flex";
+  this.refreshLeaderboardUI(false);
+  this.updateSettingsBgmUI();
+}
+
+closeSettingsModal() {
+  if (!this.settingsBackdrop) return;
+  this.isSettingsOpen = false;
+  this.settingsBackdrop.style.display = "none";
+}
+
+updateSettingsBgmUI() {
+  if (!this.settingsBgmToggleButton) return;
+  this.settingsBgmToggleButton.textContent = this.bgmEnabled ? "ON" : "OFF";
+  this.settingsBgmToggleButton.style.opacity = this.bgmEnabled ? "1" : "0.72";
+}
+
+renderLeaderboardRows(entries = []) {
+  if (!this.settingsLeaderboardList) return;
+
+  this.settingsLeaderboardList.innerHTML = "";
+
+  if (!entries.length) {
+    const empty = document.createElement("div");
+    empty.textContent = "랭킹 데이터가 없습니다.";
+    empty.style.padding = "12px 14px";
+    empty.style.borderRadius = "12px";
+    empty.style.background = "rgba(255,255,255,0.05)";
+    empty.style.fontSize = "13px";
+    empty.style.opacity = "0.78";
+    this.settingsLeaderboardList.appendChild(empty);
+    return;
+  }
+
+  entries.forEach((entry, index) => {
+    const row = document.createElement("div");
+    row.style.display = "grid";
+    row.style.gridTemplateColumns = "46px 1fr 82px";
+    row.style.alignItems = "center";
+    row.style.gap = "10px";
+    row.style.padding = "10px 12px";
+    row.style.borderRadius = "12px";
+    row.style.background = "rgba(255,255,255,0.05)";
+
+    const rank = document.createElement("div");
+    rank.textContent = `${index + 1}위`;
+    rank.style.fontWeight = "800";
+
+    const nameWrap = document.createElement("div");
+    nameWrap.style.display = "flex";
+    nameWrap.style.flexDirection = "column";
+    nameWrap.style.minWidth = "0";
+
+    const name = document.createElement("div");
+    name.textContent = entry.nickname || "Player";
+    name.style.fontWeight = "700";
+    name.style.whiteSpace = "nowrap";
+    name.style.overflow = "hidden";
+    name.style.textOverflow = "ellipsis";
+
+    const meta = document.createElement("div");
+    meta.textContent = `블럭 ${entry.blocks_used ?? 0}개`;
+    meta.style.fontSize = "11px";
+    meta.style.opacity = "0.68";
+
+    const score = document.createElement("div");
+    score.textContent = Number(entry.score ?? 0).toFixed(2);
+    score.style.textAlign = "right";
+    score.style.fontWeight = "800";
+
+    nameWrap.appendChild(name);
+    nameWrap.appendChild(meta);
+
+    row.appendChild(rank);
+    row.appendChild(nameWrap);
+    row.appendChild(score);
+
+    this.settingsLeaderboardList.appendChild(row);
+  });
+}
+
+async refreshLeaderboardUI(force = false) {
+  if (!this.settingsLeaderboardList || !this.rankingService?.isReady?.()) {
+    if (this.settingsLeaderboardStatus) {
+      this.settingsLeaderboardStatus.textContent = "Supabase 설정이 필요합니다.";
+    }
+    return;
+  }
+
+  if (this.settingsLeaderboardStatus) {
+    this.settingsLeaderboardStatus.textContent = "랭킹 불러오는 중...";
+  }
+
+  try {
+    if (force || !this.cachedLeaderboard.length) {
+      this.cachedLeaderboard = await this.rankingService.fetchTop(100);
     }
 
-    this.bgmToggleButton = button;
-    this.bgmToggleButton.addEventListener("click", this.onBgmToggleClick);
-    this.updateBgmButtonUI();
-  }
+    this.renderLeaderboardRows(this.cachedLeaderboard);
 
-  updateBgmButtonUI() {
-    if (!this.bgmToggleButton) return;
-
-    this.bgmToggleButton.textContent = this.bgmEnabled ? "BGM ON" : "BGM OFF";
-    this.bgmToggleButton.style.opacity = this.bgmEnabled ? "1" : "0.7";
+    if (this.settingsLeaderboardStatus) {
+      this.settingsLeaderboardStatus.textContent = `총 ${this.cachedLeaderboard.length}개 표시 중`;
+    }
+  } catch (error) {
+    console.error("Leaderboard fetch failed:", error);
+    if (this.settingsLeaderboardStatus) {
+      this.settingsLeaderboardStatus.textContent = "랭킹을 불러오지 못했습니다.";
+    }
   }
+}
+
+updateBgmButtonUI() {
+  this.updateSettingsBgmUI();
+}
 
   setupBgmUnlock() {
     window.addEventListener("pointerdown", this.unlockBgm, { passive: true });
@@ -1412,16 +1706,41 @@ clearRotationGhost() {
     this.heightLabel.textContent = `현재 높이: ${height.toFixed(2)}`;
   }
 
-  updateBestHeightUI() {
-    if (!this.bestHeightLabel) return;
-    this.bestHeightLabel.textContent = `최고 기록: ${this.bestHeight.toFixed(2)}`;
-  }
+updateBestHeightUI() {
+  if (!this.bestHeightLabel) return;
 
+  const roundPeak = this.blockSystem?.getPeakStableHeight?.() ?? 0;
+  const displayBest = Math.max(this.bestHeight, roundPeak);
+
+  this.bestHeightLabel.textContent = `최고 기록: ${displayBest.toFixed(2)}`;
+}
   updateVersionUI() {
     if (!this.versionLabel) return;
     this.versionLabel.textContent = `버전: ${this.appVersion}`;
   }
+async submitRankingScore() {
+  if (!this.blockSystem || !this.rankingService?.isReady?.()) return null;
 
+  const score = this.blockSystem.getPeakStableHeight
+    ? this.blockSystem.getPeakStableHeight()
+    : this.blockSystem.getStableHeight();
+
+  const blocksUsed = this.blockSystem.getCommittedBlockCount
+    ? this.blockSystem.getCommittedBlockCount()
+    : this.blockSystem.getBlockCount
+    ? this.blockSystem.getBlockCount()
+    : 0;
+
+  const result = await this.rankingService.submitScore({
+    nickname: this.nickname,
+    score,
+    blocksUsed,
+    version: this.appVersion,
+  });
+
+  this.lastRank = result?.rank ?? null;
+  return result;
+}
   updateControlButton() {
     if (!this.actionButton || !this.blockSystem) return;
 
@@ -1478,25 +1797,27 @@ clearRotationGhost() {
     this.updateActionButtonLayout();
   }
 
-  async handleFail() {
-    if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
+async handleFail() {
+  if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
 
-    this.isGameOver = true;
-    this.updateControlButton();
-    this.updateRotateButtonsUI();
-    this.updateJoystickUI();
+  this.isGameOver = true;
+  this.updateControlButton();
+  this.updateRotateButtonsUI();
+  this.updateJoystickUI();
 
-    setTimeout(async () => {
-      const height = this.blockSystem.getStableHeight();
+  setTimeout(async () => {
+    try {
+      const currentHeight = this.blockSystem.getStableHeight();
+      const finalScore = this.blockSystem.getPeakStableHeight();
 
-      if (height > this.bestHeight) {
-        this.bestHeight = height;
+      if (finalScore > this.bestHeight) {
+        this.bestHeight = finalScore;
       }
 
       this.updateBestHeightUI();
 
       let name = prompt(
-        `실패!\n현재 기록: ${height.toFixed(2)}\n최고 기록: ${this.bestHeight.toFixed(2)}\n닉네임 입력:`,
+        `실패!\n현재 높이: ${currentHeight.toFixed(2)}\n최종 점수(최고 안정 높이): ${finalScore.toFixed(2)}\n최고 기록: ${this.bestHeight.toFixed(2)}\n닉네임 입력:`,
         this.nickname || "Player"
       );
 
@@ -1505,10 +1826,23 @@ clearRotationGhost() {
       }
 
       this.nickname = name.trim();
-      await this.restartGame();
-    }, 100);
-  }
+      this.updateNicknameUI();
 
+      try {
+   const rankingResult = await this.submitRankingScore();
+        if (rankingResult?.rank) {
+          alert(
+            `랭킹 등록 완료!\n닉네임: ${this.nickname}\n점수: ${finalScore.toFixed(2)}\n현재 순위: ${rankingResult.rank}위`
+          );
+        }
+      } catch (rankingError) {
+        console.warn("Ranking submit failed:", rankingError);
+      }
+    } finally {
+      await this.restartGame();
+    }
+  }, 100);
+}
   async restartGame() {
     if (this.isRestarting || !this.blockSystem) return;
 
@@ -1537,6 +1871,8 @@ clearRotationGhost() {
     this.updateControlButton();
     this.updateRotateButtonsUI();
     this.updateJoystickUI();
+
+    await this.refreshLeaderboardUI(true);
   }
 
   async start() {
@@ -1590,6 +1926,8 @@ clearRotationGhost() {
       this.updateJoystickUI();
       this.updateActionButtonLayout();
       await this.updateNextPreviewUI();
+
+      await this.refreshLeaderboardUI(true);
 
       window.addEventListener("resize", this.onResize);
       this.actionButton?.addEventListener("click", this.onActionButtonClick);

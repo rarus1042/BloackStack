@@ -24,9 +24,10 @@ export class BlockSystem {
     this.minSpawnHeight = options.minSpawnHeight ?? 2.3;
     this.previewClampPadding = options.previewClampPadding ?? 0.35;
 
-    this.liveHeight = 0;
-    this.stableHeight = 0;
-    this.heightStep = options.heightStep ?? 0.5;
+this.liveHeight = 0;
+this.stableHeight = 0;
+this.peakStableHeight = 0;
+this.heightStep = options.heightStep ?? 0.5;
 
     this.previewX = 0;
     this.previewY = 0;
@@ -129,10 +130,7 @@ export class BlockSystem {
   getSpawnHeight() {
     const steppedHeight = this.quantizeHeightUp(this.stableHeight);
 
-    return Math.max(
-      steppedHeight + this.spawnClearance,
-      this.minSpawnHeight
-    );
+    return Math.max(steppedHeight + this.spawnClearance, this.minSpawnHeight);
   }
 
   getCurrentPreviewBlock() {
@@ -263,10 +261,14 @@ export class BlockSystem {
     return true;
   }
 
-  updateHeights() {
-    this.liveHeight = this.monitor.computeHeight(this.blocks, false);
-    this.stableHeight = this.monitor.computeSettledHeight(this.blocks);
+updateHeights() {
+  this.liveHeight = this.monitor.computeHeight(this.blocks, false);
+  this.stableHeight = this.monitor.computeSettledHeight(this.blocks);
+
+  if (this.stableHeight > this.peakStableHeight) {
+    this.peakStableHeight = this.stableHeight;
   }
+}
 
   tryFinishCurrentLanding() {
     if (this.state !== "WAITING") return;
@@ -313,6 +315,7 @@ export class BlockSystem {
 
     this.liveHeight = 0;
     this.stableHeight = 0;
+    this.peakStableHeight = 0;
 
     this.previewX = 0;
     this.previewY = 0;
@@ -329,6 +332,10 @@ export class BlockSystem {
 
   getStableHeight() {
     return this.stableHeight;
+  }
+
+  getPeakStableHeight() {
+    return this.peakStableHeight;
   }
 
   getLiveHeight() {
@@ -393,11 +400,7 @@ export class BlockSystem {
     let lastFreeY = startPosition.y;
     let hitY = null;
 
-    for (
-      let y = startPosition.y - coarseStep;
-      y >= searchMinY;
-      y -= coarseStep
-    ) {
+    for (let y = startPosition.y - coarseStep; y >= searchMinY; y -= coarseStep) {
       this.predictionCoarsePos.set(startPosition.x, y, startPosition.z);
 
       if (this.collidesShapeAt(this.predictionCoarsePos, quaternion, shapeData, block)) {
@@ -511,22 +514,9 @@ export class BlockSystem {
       const axesB = this.getQuaternionAxes(otherQuat);
       const cellsB = this.getWorldCellCenters(otherPos, otherQuat, other.collision);
 
-      for (let i = 0; i < cellsA.length; i++) {
-        const centerA = cellsA[i];
-
-        for (let j = 0; j < cellsB.length; j++) {
-          const centerB = cellsB[j];
-
-          if (
-            this.obbIntersects(
-              centerA,
-              axesA,
-              shapeData.halfExtent,
-              centerB,
-              axesB,
-              other.collision.halfExtent
-            )
-          ) {
+      for (const cellA of cellsA) {
+        for (const cellB of cellsB) {
+          if (this.obbOverlap(cellA, axesA, shapeData.halfExtent, cellB, axesB, other.collision.halfExtent)) {
             return true;
           }
         }
@@ -534,44 +524,6 @@ export class BlockSystem {
     }
 
     return false;
-  }
-
-  getShapeVerticalExtents(position, quaternion, shapeData) {
-    const axes = this.getQuaternionAxes(quaternion);
-    const verticalHalfSpan =
-      shapeData.halfExtent *
-      (
-        Math.abs(axes[0].y) +
-        Math.abs(axes[1].y) +
-        Math.abs(axes[2].y)
-      );
-
-    let minY = Infinity;
-    let maxY = -Infinity;
-
-    for (const offset of shapeData.cellOffsets) {
-      const center = this.transformLocalOffset(position, quaternion, offset);
-      minY = Math.min(minY, center.y - verticalHalfSpan);
-      maxY = Math.max(maxY, center.y + verticalHalfSpan);
-    }
-
-    return { minY, maxY };
-  }
-
-  getWorldCellCenters(position, quaternion, shapeData) {
-    const centers = [];
-
-    for (const offset of shapeData.cellOffsets) {
-      centers.push(this.transformLocalOffset(position, quaternion, offset));
-    }
-
-    return centers;
-  }
-
-  transformLocalOffset(position, quaternion, offset) {
-    return new THREE.Vector3(offset.x, offset.y, offset.z)
-      .applyQuaternion(quaternion)
-      .add(position);
   }
 
   getQuaternionAxes(quaternion) {
@@ -582,18 +534,48 @@ export class BlockSystem {
     ];
   }
 
-  obbIntersects(centerA, axesA, halfA, centerB, axesB, halfB) {
-    const EPSILON = 1e-6;
+  getWorldCellCenters(position, quaternion, shapeData) {
+    const half = shapeData.halfExtent ?? 0.5;
 
-    const a = [halfA, halfA, halfA];
-    const b = [halfB, halfB, halfB];
+    return shapeData.cellOffsets.map((offset) => {
+      return new THREE.Vector3(
+        offset.x * half * 2,
+        offset.y * half * 2,
+        offset.z * half * 2
+      )
+        .applyQuaternion(quaternion)
+        .add(position);
+    });
+  }
+
+  getShapeVerticalExtents(position, quaternion, shapeData) {
+    const cells = this.getWorldCellCenters(position, quaternion, shapeData);
+    const half = shapeData.halfExtent ?? 0.5;
+
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (const cell of cells) {
+      const y0 = cell.y - half;
+      const y1 = cell.y + half;
+      if (y0 < minY) minY = y0;
+      if (y1 > maxY) maxY = y1;
+    }
+
+    if (!Number.isFinite(minY)) minY = position.y - half;
+    if (!Number.isFinite(maxY)) maxY = position.y + half;
+
+    return { minY, maxY };
+  }
+
+  obbOverlap(centerA, axesA, halfA, centerB, axesB, halfB) {
+    const EPSILON = 1e-5;
 
     const R = [
       [0, 0, 0],
       [0, 0, 0],
       [0, 0, 0],
     ];
-
     const AbsR = [
       [0, 0, 0],
       [0, 0, 0],
@@ -614,75 +596,45 @@ export class BlockSystem {
       tVec.dot(axesA[2]),
     ];
 
-    let ra = 0;
-    let rb = 0;
-
     for (let i = 0; i < 3; i++) {
-      ra = a[i];
-      rb =
-        b[0] * AbsR[i][0] +
-        b[1] * AbsR[i][1] +
-        b[2] * AbsR[i][2];
-
-      if (Math.abs(t[i]) > ra + rb) {
-        return false;
-      }
+      const ra = halfA;
+      const rb = halfB * (AbsR[i][0] + AbsR[i][1] + AbsR[i][2]);
+      if (Math.abs(t[i]) > ra + rb) return false;
     }
 
     for (let j = 0; j < 3; j++) {
-      ra =
-        a[0] * AbsR[0][j] +
-        a[1] * AbsR[1][j] +
-        a[2] * AbsR[2][j];
-      rb = b[j];
+      const ra = halfA * (AbsR[0][j] + AbsR[1][j] + AbsR[2][j]);
+      const rb = halfB;
+      const val = Math.abs(t[0] * R[0][j] + t[1] * R[1][j] + t[2] * R[2][j]);
+      if (val > ra + rb) return false;
+    }
 
-      const proj = Math.abs(
-        t[0] * R[0][j] +
-        t[1] * R[1][j] +
-        t[2] * R[2][j]
-      );
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const ra =
+          halfA *
+          (AbsR[(i + 1) % 3][j] + AbsR[(i + 2) % 3][j]);
+        const rb =
+          halfB *
+          (AbsR[i][(j + 1) % 3] + AbsR[i][(j + 2) % 3]);
 
-      if (proj > ra + rb) {
-        return false;
+        const val = Math.abs(
+          t[(i + 2) % 3] * R[(i + 1) % 3][j] -
+            t[(i + 1) % 3] * R[(i + 2) % 3][j]
+        );
+
+        if (val > ra + rb) return false;
       }
     }
 
-    ra = a[1] * AbsR[2][0] + a[2] * AbsR[1][0];
-    rb = b[1] * AbsR[0][2] + b[2] * AbsR[0][1];
-    if (Math.abs(t[2] * R[1][0] - t[1] * R[2][0]) > ra + rb) return false;
-
-    ra = a[1] * AbsR[2][1] + a[2] * AbsR[1][1];
-    rb = b[0] * AbsR[0][2] + b[2] * AbsR[0][0];
-    if (Math.abs(t[2] * R[1][1] - t[1] * R[2][1]) > ra + rb) return false;
-
-    ra = a[1] * AbsR[2][2] + a[2] * AbsR[1][2];
-    rb = b[0] * AbsR[0][1] + b[1] * AbsR[0][0];
-    if (Math.abs(t[2] * R[1][2] - t[1] * R[2][2]) > ra + rb) return false;
-
-    ra = a[0] * AbsR[2][0] + a[2] * AbsR[0][0];
-    rb = b[1] * AbsR[1][2] + b[2] * AbsR[1][1];
-    if (Math.abs(t[0] * R[2][0] - t[2] * R[0][0]) > ra + rb) return false;
-
-    ra = a[0] * AbsR[2][1] + a[2] * AbsR[0][1];
-    rb = b[0] * AbsR[1][2] + b[2] * AbsR[1][0];
-    if (Math.abs(t[0] * R[2][1] - t[2] * R[0][1]) > ra + rb) return false;
-
-    ra = a[0] * AbsR[2][2] + a[2] * AbsR[0][2];
-    rb = b[0] * AbsR[1][1] + b[1] * AbsR[1][0];
-    if (Math.abs(t[0] * R[2][2] - t[2] * R[0][2]) > ra + rb) return false;
-
-    ra = a[0] * AbsR[1][0] + a[1] * AbsR[0][0];
-    rb = b[1] * AbsR[2][2] + b[2] * AbsR[2][1];
-    if (Math.abs(t[1] * R[0][0] - t[0] * R[1][0]) > ra + rb) return false;
-
-    ra = a[0] * AbsR[1][1] + a[1] * AbsR[0][1];
-    rb = b[0] * AbsR[2][2] + b[2] * AbsR[2][0];
-    if (Math.abs(t[1] * R[0][1] - t[0] * R[1][1]) > ra + rb) return false;
-
-    ra = a[0] * AbsR[1][2] + a[1] * AbsR[0][2];
-    rb = b[0] * AbsR[2][1] + b[1] * AbsR[2][0];
-    if (Math.abs(t[1] * R[0][2] - t[0] * R[1][2]) > ra + rb) return false;
-
     return true;
   }
+
+  getBlockCount() {
+    return this.blocks.filter((block) => block && block.committed).length;
+  }
+
+  getCommittedBlockCount() {
+  return this.getBlockCount();
+}
 }
