@@ -10,6 +10,17 @@ export class PlacementGuide {
     this.root = new THREE.Group();
     this.scene.add(this.root);
 
+    this.predictionRoot = new THREE.Group();
+    this.predictionRoot.visible = false;
+    this.scene.add(this.predictionRoot);
+
+    this.projectionRoot = new THREE.Group();
+    this.projectionRoot.visible = false;
+    this.scene.add(this.projectionRoot);
+
+    this.predictionGhost = null;
+    this.predictionGhostSourceId = null;
+
     this.createGuide();
     this.createProjectionRay();
   }
@@ -61,11 +72,6 @@ export class PlacementGuide {
   }
 
   createProjectionRay() {
-    this.projectionRoot = new THREE.Group();
-    this.projectionRoot.visible = false;
-    this.scene.add(this.projectionRoot);
-
-    // 세로 레이 본체
     const beamGeom = new THREE.CylinderGeometry(0.018, 0.032, 1, 14, 1, true);
     const beamMat = new THREE.MeshBasicMaterial({
       color: 0xffa347,
@@ -80,7 +86,6 @@ export class PlacementGuide {
     this.projectionBeam.renderOrder = 995;
     this.projectionRoot.add(this.projectionBeam);
 
-    // 중심 밝은 라인
     const lineGeom = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, -0.5, 0),
       new THREE.Vector3(0, 0.5, 0),
@@ -97,7 +102,6 @@ export class PlacementGuide {
     this.projectionLine.renderOrder = 996;
     this.projectionRoot.add(this.projectionLine);
 
-    // 바닥 접점 링
     const ringGeom = new THREE.RingGeometry(0.12, 0.18, 32);
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0xffb15a,
@@ -113,7 +117,6 @@ export class PlacementGuide {
     this.hitRing.renderOrder = 996;
     this.projectionRoot.add(this.hitRing);
 
-    // 은은한 바닥 글로우
     const glowGeom = new THREE.CircleGeometry(0.22, 32);
     const glowMat = new THREE.MeshBasicMaterial({
       color: 0xff8c2f,
@@ -166,8 +169,112 @@ export class PlacementGuide {
     this.hitGlow.position.set(to.x, to.y + 0.01, to.z);
   }
 
+  createPredictionGhost(block) {
+    if (!block?.mesh) return null;
+
+    const ghost = block.mesh.clone(true);
+
+    ghost.traverse((child) => {
+      if (!child.isMesh) return;
+
+      child.renderOrder = 993;
+      child.raycast = () => {};
+
+      if (child.material) {
+        const source = child.material;
+        const mat = source.clone();
+
+        mat.transparent = true;
+        mat.opacity = 0.22;
+        mat.depthWrite = false;
+        mat.depthTest = true;
+
+        if (mat.color) {
+          mat.color.offsetHSL(0, -0.05, 0.18);
+        }
+
+        if (mat.emissive instanceof THREE.Color) {
+          mat.emissive = mat.emissive.clone();
+          mat.emissive.set(0xffffff);
+          mat.emissiveIntensity = 0.18;
+        }
+
+        child.material = mat;
+      }
+    });
+
+    return ghost;
+  }
+
+  ensurePredictionGhost(block) {
+    const sourceId = block?.mesh?.uuid ?? null;
+
+    if (!sourceId) {
+      this.hidePredictionGhost();
+      return;
+    }
+
+    if (
+      this.predictionGhost &&
+      this.predictionGhostSourceId === sourceId
+    ) {
+      return;
+    }
+
+    this.clearPredictionGhost();
+
+    this.predictionGhost = this.createPredictionGhost(block);
+    this.predictionGhostSourceId = sourceId;
+
+    if (this.predictionGhost) {
+      this.predictionRoot.add(this.predictionGhost);
+    }
+  }
+
+  updatePredictionGhost(block, position, quaternion) {
+    if (!block?.mesh || !position || !quaternion) {
+      this.hidePredictionGhost();
+      return;
+    }
+
+    this.ensurePredictionGhost(block);
+
+    if (!this.predictionGhost) {
+      this.hidePredictionGhost();
+      return;
+    }
+
+    this.predictionRoot.visible = true;
+    this.predictionGhost.position.copy(position);
+    this.predictionGhost.quaternion.copy(quaternion);
+    this.predictionGhost.scale.copy(block.mesh.scale);
+  }
+
   hideProjection() {
     this.projectionRoot.visible = false;
+  }
+
+  hidePredictionGhost() {
+    this.predictionRoot.visible = false;
+  }
+
+  clearPredictionGhost() {
+    if (!this.predictionGhost) {
+      this.predictionGhostSourceId = null;
+      return;
+    }
+
+    if (this.predictionGhost.parent) {
+      this.predictionGhost.parent.remove(this.predictionGhost);
+    }
+
+    this.predictionGhost.traverse((child) => {
+      if (!child.isMesh) return;
+      if (child.material?.dispose) child.material.dispose();
+    });
+
+    this.predictionGhost = null;
+    this.predictionGhostSourceId = null;
   }
 
   show() {
@@ -177,11 +284,15 @@ export class PlacementGuide {
   hide() {
     this.root.visible = false;
     this.hideProjection();
+    this.hidePredictionGhost();
   }
 
   dispose() {
+    this.clearPredictionGhost();
+
     this.scene.remove(this.root);
     this.scene.remove(this.projectionRoot);
+    this.scene.remove(this.predictionRoot);
 
     this.root.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();

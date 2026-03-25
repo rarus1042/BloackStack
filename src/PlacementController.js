@@ -26,6 +26,7 @@ export class PlacementController {
     this.downRayDirection = new THREE.Vector3(0, -1, 0);
     this.projectionStart = new THREE.Vector3();
     this.projectionEnd = new THREE.Vector3();
+    this.predictedBlockPosition = new THREE.Vector3();
 
     this.activePointerId = null;
     this.isDragging = false;
@@ -178,14 +179,23 @@ export class PlacementController {
     return this.blockSystem?.getCurrentPreviewBlock() ?? null;
   }
 
-  updateProjectionRay(block) {
+     updateProjectionRay(block) {
     if (!block?.mesh) {
       this.guide.hideProjection();
+      this.guide.hidePredictionGhost();
       return;
     }
 
-    const startY = block.mesh.position.y - (block.halfHeight ?? 0.5);
-    this.projectionStart.set(block.mesh.position.x, startY, block.mesh.position.z);
+    const bbox = new THREE.Box3().setFromObject(block.mesh);
+    const bottomY = bbox.min.y;
+    const centerY = block.mesh.position.y;
+    const bottomOffset = Math.max(0.001, centerY - bottomY);
+
+    this.projectionStart.set(
+      block.mesh.position.x,
+      bottomY + 0.01,
+      block.mesh.position.z
+    );
 
     const targets = [];
 
@@ -204,12 +214,13 @@ export class PlacementController {
 
     if (targets.length === 0) {
       this.guide.hideProjection();
+      this.guide.hidePredictionGhost();
       return;
     }
 
     this.downRayOrigin.set(
       this.projectionStart.x,
-      this.projectionStart.y + 0.05,
+      this.projectionStart.y + 0.03,
       this.projectionStart.z
     );
 
@@ -220,21 +231,36 @@ export class PlacementController {
 
     if (!hits.length) {
       this.guide.hideProjection();
+      this.guide.hidePredictionGhost();
       return;
     }
 
     const hit = hits[0];
     this.projectionEnd.copy(hit.point);
-    this.projectionEnd.y += 0.015;
+    this.projectionEnd.y += 0.008;
 
-    if (this.projectionEnd.y >= this.projectionStart.y - 0.01) {
+    if (this.projectionEnd.y >= this.projectionStart.y - 0.005) {
       this.guide.hideProjection();
+      this.guide.hidePredictionGhost();
       return;
     }
 
     this.guide.updateProjection(this.projectionStart, this.projectionEnd);
-  }
 
+    const predictedY = hit.point.y + bottomOffset + 0.008;
+
+    this.predictedBlockPosition.set(
+      block.mesh.position.x,
+      predictedY,
+      block.mesh.position.z
+    );
+
+    this.guide.updatePredictionGhost(
+      block,
+      this.predictedBlockPosition,
+      block.mesh.quaternion
+    );
+  }
   consumeEvent(event) {
     event.preventDefault();
     event.stopPropagation();
