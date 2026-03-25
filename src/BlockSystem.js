@@ -15,14 +15,14 @@ export class BlockSystem {
     this.currentBlock = null;
     this.isSpawning = false;
 
-    this.stageSize = options.stageSize ?? 4;
+    this.stageSize = options.stageSize ?? 5;
     this.blockSize = options.blockSize ?? 1;
     this.failY = options.failY ?? -3;
-    this.fallSpeed = options.fallSpeed ?? 1.6;
+    this.fallSpeed = options.fallSpeed ?? 2;
 
-    this.spawnClearance = options.spawnClearance ?? 1.9;
-    this.minSpawnHeight = options.minSpawnHeight ?? 2.8;
-    this.previewClampPadding = options.previewClampPadding ?? 0.25;
+    this.spawnClearance = options.spawnClearance ?? 1.6;
+    this.minSpawnHeight = options.minSpawnHeight ?? 2.3;
+    this.previewClampPadding = options.previewClampPadding ?? 0.35;
 
     this.liveHeight = 0;
     this.stableHeight = 0;
@@ -41,19 +41,18 @@ export class BlockSystem {
 
     this.factory = new BlockFactory(scene, physics, {
       blockSize: this.blockSize,
-      cellSize: options.cellSize ?? this.blockSize * 0.45,
-      visualCellScale: 0.94,
       fallSpeed: this.fallSpeed,
-      linearDamping: 2.0,
-      angularDamping: 5.8,
+      linearDamping: 2.2,
+      angularDamping: 6.5,
+      modelListPath: "models/model-list.json",
     });
 
     this.monitor = new StructureMonitor({
       stageSize: this.stageSize,
       failY: this.failY,
 
-      contactVerticalThreshold: 0.34,
-      contactHorizontalThreshold: 0.28,
+      contactVerticalThreshold: 0.32,
+      contactHorizontalThreshold: 0.26,
       contactFramesRequired: 2,
 
       landingMinFrames: 4,
@@ -61,13 +60,13 @@ export class BlockSystem {
       maxLandingYDelta: 0.02,
       maxLandingTime: 5.0,
 
-      largeMoveLinearThreshold: 1.0,
-      largeMoveAngularThreshold: 1.0,
+      largeMoveLinearThreshold: 0.9,
+      largeMoveAngularThreshold: 0.9,
 
       jitterLinearMin: 0.02,
       jitterLinearMax: 0.22,
       jitterAngularMin: 0.02,
-      jitterAngularMax: 0.34,
+      jitterAngularMax: 0.32,
       jitterPositionDeltaMax: 0.006,
       jitterYDeltaMax: 0.006,
       jitterFramesRequired: 16,
@@ -132,32 +131,32 @@ export class BlockSystem {
   }
 
   clampPreviewPosition(x, z) {
-    const current = this.getCurrentPreviewBlock();
-    const footprintRadius = current?.footprintRadius ?? 0;
-
-    const radius = Math.max(
-      0,
-      this.stageSize / 2 - this.previewClampPadding - footprintRadius
-    );
-
+    const radius = Math.max(0, this.stageSize / 2 - this.previewClampPadding);
     const len = Math.hypot(x, z);
 
-    if (len <= radius || len === 0) return { x, z };
+    if (len <= radius || len === 0) {
+      return { x, z };
+    }
 
-    const s = radius / len;
-    return { x: x * s, z: z * s };
+    const scale = radius / len;
+    return {
+      x: x * scale,
+      z: z * scale,
+    };
   }
 
   applyPreviewTransform() {
     if (!this.currentBlock || this.currentBlock.state !== "preview") return;
 
-    const t = {
-      x: this.previewX,
-      y: this.previewY,
-      z: this.previewZ,
-    };
+    this.currentBlock.body.setTranslation(
+      {
+        x: this.previewX,
+        y: this.previewY,
+        z: this.previewZ,
+      },
+      true
+    );
 
-    this.currentBlock.body.setTranslation(t, true);
     this.currentBlock.body.setRotation(this.previewQuaternion, true);
   }
 
@@ -165,10 +164,10 @@ export class BlockSystem {
     if (!this.currentBlock) return;
     if (this.state !== "EDIT" && this.state !== "ROTATE") return;
 
-    const c = this.clampPreviewPosition(x, z);
+    const clamped = this.clampPreviewPosition(x, z);
 
-    this.previewX = c.x;
-    this.previewZ = c.z;
+    this.previewX = clamped.x;
+    this.previewZ = clamped.z;
     this.previewY = this.currentBlock.body.translation().y;
 
     this.applyPreviewTransform();
@@ -185,6 +184,7 @@ export class BlockSystem {
     this.state = "EDIT";
     return true;
   }
+
   rotatePreviewByAxis(axis, angle) {
     if (!this.currentBlock || this.currentBlock.state !== "preview") return false;
     if (this.state !== "EDIT" && this.state !== "ROTATE") return false;
@@ -236,7 +236,10 @@ export class BlockSystem {
   tryFinishCurrentLanding() {
     if (this.state !== "WAITING") return;
 
-    const lastCommitted = this.blocks.find((b) => b.id === this.lastCommittedBlockId);
+    const lastCommitted = this.blocks.find(
+      (block) => block.id === this.lastCommittedBlockId
+    );
+
     if (!lastCommitted) return;
 
     if (lastCommitted.state === "settled") {
@@ -258,13 +261,15 @@ export class BlockSystem {
     this.maybeSpawnNextBlock();
 
     if (this.monitor.checkFail(this.blocks)) {
-      if (this.onFail) this.onFail();
+      if (this.onFail) {
+        this.onFail();
+      }
     }
   }
 
   reset() {
-    for (const b of this.blocks) {
-      this.factory.disposeBlock(b);
+    for (const block of this.blocks) {
+      this.factory.disposeBlock(block);
     }
 
     this.blocks = [];
