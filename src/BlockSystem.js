@@ -185,14 +185,14 @@ export class BlockSystem {
     this.state = "EDIT";
     return true;
   }
-
   rotatePreviewByAxis(axis, angle) {
-    if (this.state !== "ROTATE") return;
+    if (!this.currentBlock || this.currentBlock.state !== "preview") return false;
+    if (this.state !== "EDIT" && this.state !== "ROTATE") return false;
 
     if (axis === "x") this.tempAxis.set(1, 0, 0);
     else if (axis === "y") this.tempAxis.set(0, 1, 0);
     else if (axis === "z") this.tempAxis.set(0, 0, 1);
-    else return;
+    else return false;
 
     this.tempAxis.applyQuaternion(this.previewQuaternion).normalize();
     this.deltaQuaternion.setFromAxisAngle(this.tempAxis, angle);
@@ -202,6 +202,13 @@ export class BlockSystem {
       .normalize();
 
     this.applyPreviewTransform();
+    return true;
+  }
+
+  rotatePreview90(axis, turns = 1) {
+    const normalizedTurns = Math.trunc(turns);
+    if (!normalizedTurns) return false;
+    return this.rotatePreviewByAxis(axis, (Math.PI / 2) * normalizedTurns);
   }
 
   confirmCurrentBlock() {

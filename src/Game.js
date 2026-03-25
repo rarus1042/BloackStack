@@ -43,7 +43,25 @@ export class Game {
     this.nicknameLabel = document.getElementById("nicknameLabel");
     this.heightLabel = document.getElementById("heightLabel");
     this.actionButton = document.getElementById("actionButton");
+    this.rotateButtonsPanel = null;
+    this.rotateButtons = { x: null, y: null, z: null };
+        this.hoverRotateAxis = null;
+    this.rotationGhost = null;
+    this.rotationGhostAxis = null;
 
+    this.axisColorMap = {
+      x: "#ff6b6b",
+      y: "#6bff95",
+      z: "#6ba8ff",
+    };
+
+    this.axisVectorMap = {
+      x: new THREE.Vector3(1, 0, 0),
+      y: new THREE.Vector3(0, 1, 0),
+      z: new THREE.Vector3(0, 0, 1),
+    };
+
+      this.onRotateStepButtonClick = this.onRotateStepButtonClick.bind(this);
     this.bestHeightLabel = document.getElementById("bestHeightLabel");
     if (!this.bestHeightLabel && this.heightLabel?.parentElement) {
       this.bestHeightLabel = document.createElement("div");
@@ -101,6 +119,7 @@ export class Game {
 
     this.createLoadingScreen();
     this.createBgmToggleButton();
+    this.createRotateStepButtons();
     this.createNextPreviewUI();
     this.setupBgmUnlock();
   }
@@ -186,6 +205,342 @@ export class Game {
       this.nextPreviewRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       this.nextPreviewRenderer.setSize(layout.canvasSize, layout.canvasSize, false);
     }
+  }
+   createRotateStepButtons() {
+    let panel = document.getElementById("rotateStepButtonsPanel");
+
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "rotateStepButtonsPanel";
+      panel.style.position = "fixed";
+      panel.style.left = "16px";
+      panel.style.bottom = "84px";
+      panel.style.zIndex = "25";
+      panel.style.display = "flex";
+      panel.style.gap = "8px";
+      panel.style.padding = "8px";
+      panel.style.borderRadius = "14px";
+      panel.style.background = "rgba(0,0,0,0.42)";
+      panel.style.backdropFilter = "blur(8px)";
+      panel.style.border = "1px solid rgba(255,255,255,0.10)";
+      panel.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
+      panel.style.userSelect = "none";
+      panel.style.webkitUserSelect = "none";
+
+      const axisInfos = {
+        x: {
+          icon: "↺",
+          title: "X +90°",
+          hint: "앞뒤 회전",
+        },
+        y: {
+          icon: "⟲",
+          title: "Y +90°",
+          hint: "방향 전환",
+        },
+        z: {
+          icon: "↻",
+          title: "Z +90°",
+          hint: "좌우 회전",
+        },
+      };
+
+      const makeButton = (axis) => {
+        const info = axisInfos[axis];
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.axis = axis;
+        button.style.minWidth = "76px";
+        button.style.height = "52px";
+        button.style.padding = "6px 10px";
+        button.style.border = "0";
+        button.style.borderRadius = "12px";
+        button.style.background = "rgba(255,255,255,0.14)";
+        button.style.color = "#fff";
+        button.style.cursor = "pointer";
+        button.style.transition =
+          "opacity 0.15s ease, transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease";
+        button.style.display = "flex";
+        button.style.flexDirection = "column";
+        button.style.alignItems = "center";
+        button.style.justifyContent = "center";
+        button.style.gap = "2px";
+        button.style.position = "relative";
+        button.style.overflow = "hidden";
+
+        const accent = document.createElement("div");
+        accent.style.position = "absolute";
+        accent.style.left = "0";
+        accent.style.top = "0";
+        accent.style.width = "100%";
+        accent.style.height = "2px";
+        accent.style.background = this.axisColorMap[axis];
+        accent.style.opacity = "0.9";
+        button.appendChild(accent);
+
+        const icon = document.createElement("div");
+        icon.textContent = `${info.icon} ${axis.toUpperCase()}`;
+        icon.style.fontSize = "14px";
+        icon.style.fontWeight = "800";
+        icon.style.lineHeight = "1";
+        icon.style.color = this.axisColorMap[axis];
+        button.appendChild(icon);
+
+        const title = document.createElement("div");
+        title.textContent = info.title;
+        title.style.fontSize = "11px";
+        title.style.fontWeight = "700";
+        title.style.lineHeight = "1.05";
+        button.appendChild(title);
+
+        const hint = document.createElement("div");
+        hint.textContent = info.hint;
+        hint.style.fontSize = "10px";
+        hint.style.lineHeight = "1";
+        hint.style.opacity = "0.72";
+        button.appendChild(hint);
+
+        button.addEventListener("click", this.onRotateStepButtonClick);
+
+        button.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+
+        button.addEventListener("pointerup", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+
+        button.addEventListener("mouseenter", () => {
+          if (button.disabled) return;
+          this.hoverRotateAxis = axis;
+          this.updateRotateButtonsUI();
+        });
+
+        button.addEventListener("mouseleave", () => {
+          if (this.hoverRotateAxis === axis) {
+            this.hoverRotateAxis = null;
+            this.updateRotateButtonsUI();
+          }
+        });
+
+        return button;
+      };
+
+      const xButton = makeButton("x");
+      const yButton = makeButton("y");
+      const zButton = makeButton("z");
+
+      panel.appendChild(xButton);
+      panel.appendChild(yButton);
+      panel.appendChild(zButton);
+      document.body.appendChild(panel);
+
+      this.rotateButtons.x = xButton;
+      this.rotateButtons.y = yButton;
+      this.rotateButtons.z = zButton;
+    } else {
+      this.rotateButtons.x = panel.querySelector('[data-axis="x"]');
+      this.rotateButtons.y = panel.querySelector('[data-axis="y"]');
+      this.rotateButtons.z = panel.querySelector('[data-axis="z"]');
+    }
+
+    this.rotateButtonsPanel = panel;
+    this.updateRotateButtonsLayout();
+    this.updateRotateButtonsUI();
+  }
+   updateRotateButtonsLayout() {
+    if (!this.rotateButtonsPanel) return;
+
+    const isMobile = window.innerWidth <= 768 || window.innerHeight <= 700;
+
+    this.rotateButtonsPanel.style.left = "16px";
+    this.rotateButtonsPanel.style.bottom = isMobile ? "76px" : "88px";
+    this.rotateButtonsPanel.style.gap = isMobile ? "6px" : "8px";
+    this.rotateButtonsPanel.style.padding = isMobile ? "6px" : "8px";
+    this.rotateButtonsPanel.style.borderRadius = isMobile ? "12px" : "14px";
+
+    for (const button of Object.values(this.rotateButtons)) {
+      if (!button) continue;
+
+      button.style.minWidth = isMobile ? "64px" : "76px";
+      button.style.height = isMobile ? "46px" : "52px";
+      button.style.padding = isMobile ? "5px 8px" : "6px 10px";
+
+      const children = button.children;
+      if (children[1]) children[1].style.fontSize = isMobile ? "13px" : "14px";
+      if (children[2]) children[2].style.fontSize = isMobile ? "10px" : "11px";
+      if (children[3]) children[3].style.fontSize = isMobile ? "9px" : "10px";
+    }
+  }
+
+  updateRotateButtonsUI() {
+    const hasPreview = !!this.blockSystem?.getCurrentPreviewBlock();
+    const canRotate =
+      !!this.blockSystem &&
+      (this.blockSystem.state === "EDIT" || this.blockSystem.state === "ROTATE") &&
+      hasPreview &&
+      !this.isGameOver &&
+      !this.isRestarting;
+
+    if (this.rotateButtonsPanel) {
+      this.rotateButtonsPanel.style.opacity = canRotate ? "1" : "0.55";
+    }
+
+    for (const button of Object.values(this.rotateButtons)) {
+      if (!button) continue;
+      button.disabled = !canRotate;
+      button.style.cursor = canRotate ? "pointer" : "default";
+      button.style.opacity = canRotate ? "1" : "0.55";
+      button.style.background = canRotate
+        ? "rgba(255,255,255,0.14)"
+        : "rgba(255,255,255,0.08)";
+    }
+  }
+  getRotatedPreviewQuaternion(axis, turns = 1) {
+    const block = this.blockSystem?.getCurrentPreviewBlock();
+    if (!block) return null;
+
+    const currentQuat = block.mesh.quaternion.clone();
+    const axisVector = this.axisVectorMap[axis]?.clone();
+
+    if (!axisVector) return null;
+
+    axisVector.applyQuaternion(currentQuat).normalize();
+
+    const deltaQuat = new THREE.Quaternion().setFromAxisAngle(
+      axisVector,
+      (Math.PI / 2) * turns
+    );
+
+    return deltaQuat.multiply(currentQuat).normalize();
+  }
+
+  createRotationGhostFromBlock(block) {
+    if (!block?.mesh) return null;
+
+    const ghost = block.mesh.clone(true);
+
+    ghost.traverse((child) => {
+      if (!child.isMesh) return;
+
+      if (child.material) {
+        const sourceMaterial = child.material;
+        const material = sourceMaterial.clone();
+
+        material.transparent = true;
+        material.opacity = 0.28;
+        material.depthWrite = false;
+        material.emissive =
+          material.emissive instanceof THREE.Color
+            ? material.emissive.clone()
+            : new THREE.Color(0xffffff);
+        material.emissiveIntensity = 0.45;
+
+        child.material = material;
+      }
+
+      child.renderOrder = 998;
+      child.raycast = () => {};
+    });
+
+    return ghost;
+  }
+
+  clearRotationGhost() {
+    if (!this.rotationGhost) {
+      this.rotationGhostAxis = null;
+      return;
+    }
+
+    if (this.rotationGhost.parent) {
+      this.rotationGhost.parent.remove(this.rotationGhost);
+    }
+
+    this.rotationGhost.traverse((child) => {
+      if (!child.isMesh) return;
+      if (child.material?.dispose) child.material.dispose();
+    });
+
+    this.rotationGhost = null;
+    this.rotationGhostAxis = null;
+  }
+
+  updateRotationGhost() {
+    const axis = this.hoverRotateAxis;
+    const block = this.blockSystem?.getCurrentPreviewBlock();
+
+    if (!axis || !block?.mesh) {
+      this.clearRotationGhost();
+      return;
+    }
+
+    if (!this.rotationGhost) {
+      this.rotationGhost = this.createRotationGhostFromBlock(block);
+      if (this.rotationGhost) {
+        this.renderer.scene.add(this.rotationGhost);
+      }
+    }
+
+    if (!this.rotationGhost) return;
+
+    this.rotationGhost.position.copy(block.mesh.position);
+
+    const q = this.getRotatedPreviewQuaternion(axis, 1);
+    if (q) {
+      this.rotationGhost.quaternion.copy(q);
+      this.rotationGhostAxis = axis;
+    }
+
+    this.rotationGhost.scale.copy(block.mesh.scale);
+
+    const accent = this.axisColorMap[axis] ?? "#ffffff";
+    this.rotationGhost.traverse((child) => {
+      if (!child.isMesh || !child.material) return;
+      if (child.material.emissive instanceof THREE.Color) {
+        child.material.emissive.set(accent);
+      }
+    });
+  }
+
+  updateRotateAxisHoverGizmo() {
+    const placement = this.placementController;
+    const previewBlock = this.blockSystem?.getCurrentPreviewBlock();
+
+    if (!placement || !previewBlock) return;
+
+    // hover 때문에 gizmo를 띄우거나 active axis를 바꾸지 않는다.
+    // 회전 모드일 때만 기존 선택 축 상태를 유지하면서 sync만 맞춘다.
+    if (placement.selectionMode === "ROTATE") {
+      placement.rotateGizmo.syncToBlock(previewBlock);
+    }
+  }
+  updateRotationButtonHints() {
+    this.updateRotationGhost();
+    this.updateRotateAxisHoverGizmo();
+  }
+
+  onRotateStepButtonClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const axis = event.currentTarget?.dataset?.axis;
+    if (!axis || !this.blockSystem) return;
+    if (this.isGameOver || this.isRestarting) return;
+
+    const rotated = this.blockSystem.rotatePreview90(axis);
+    if (!rotated) return;
+
+    const previewBlock = this.blockSystem.getCurrentPreviewBlock();
+
+    if (this.placementController?.selectionMode === "ROTATE" && previewBlock) {
+      this.placementController.rotateGizmo.syncToBlock(previewBlock);
+    }
+
+    this.updateRotationGhost();
+    this.updateRotateButtonsUI();
   }
 
   createLoadingScreen() {
@@ -599,11 +954,12 @@ export class Game {
       });
 
       this.setLoadingProgress(0.96, "UI 정리 중...");
-      this.updateNicknameUI();
+        this.updateNicknameUI();
       this.updateHeightUI();
       this.updateBestHeightUI();
       this.updateVersionUI();
       this.updateBgmButtonUI();
+      this.updateRotateButtonsUI();
       await this.updateNextPreviewUI();
 
       window.addEventListener("resize", this.onResize);
@@ -782,19 +1138,22 @@ export class Game {
 
     if (this.blockSystem.state === "EDIT" || this.blockSystem.state === "ROTATE") {
       this.blockSystem.confirmCurrentBlock();
+            this.clearRotationGhost();
       await this.updateNextPreviewUI();
     }
 
     this.updateControlButton();
+    this.updateRotateButtonsUI();
   }
 
-  onResize() {
-    if (this.renderer.resize) {
-      this.renderer.resize(window.innerWidth, window.innerHeight);
-    }
-
-    this.applyNextPreviewLayout();
+onResize() {
+  if (this.renderer.resize) {
+    this.renderer.resize(window.innerWidth, window.innerHeight);
   }
+
+  this.applyNextPreviewLayout();
+  this.updateRotateButtonsLayout();
+}
 
   async handleFail() {
     if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
@@ -831,6 +1190,8 @@ export class Game {
     this.isRestarting = true;
 
     this.blockSystem.reset();
+        this.clearRotationGhost();
+    this.hoverRotateAxis = null;
     this.renderer.resetCamera();
 
     this.nextPreviewKey = "";
@@ -848,6 +1209,7 @@ export class Game {
 
     this.isRestarting = false;
     this.updateControlButton();
+    this.updateRotateButtonsUI();
   }
 
   async animate(time) {
@@ -865,17 +1227,20 @@ export class Game {
 
       this.updateHeightUI();
       this.updateControlButton();
+      this.updateRotateButtonsUI();
       await this.updateNextPreviewUI();
     }
 
-    if (this.placementController) {
+     if (this.placementController) {
       this.placementController.update();
+          this.updateRotationButtonHints();
     }
+
+    this.updateRotationButtonHints();
 
     if (this.renderer.update) {
       this.renderer.update();
     }
-
     this.renderer.render();
     this.renderNextPreview();
   }
