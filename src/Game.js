@@ -829,37 +829,39 @@ syncRotationGizmo() {
   }
 
   updateRotateButtonsLayout() {
-    if (!this.rotateButtonsPanel) return;
+  if (!this.rotateButtonsPanel) return;
 
-    const metrics = this.getResponsiveUiMetrics();
-    const isCompact = metrics.isMobile;
-    const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
+  const metrics = this.getResponsiveUiMetrics();
+  const isCompact = metrics.isMobile;
+  const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
 
-    const panelLeft = isLandscapeCompact ? 8 : 12;
-    const bottom = isLandscapeCompact ? 70 : isCompact ? 92 : 112;
-    const panelGap = isLandscapeCompact ? 4 : isCompact ? 6 : 8;
-    const panelPadding = isLandscapeCompact ? 4 : isCompact ? 6 : 8;
-    const panelRadius = isLandscapeCompact ? 10 : isCompact ? 12 : 14;
-    const buttonWidth = isLandscapeCompact ? 46 : isCompact ? 56 : 68;
-    const buttonHeight = isLandscapeCompact ? 34 : isCompact ? 42 : 50;
+  const panelLeft = isLandscapeCompact ? 6 : isCompact ? 8 : 12;
+  const bottom = isLandscapeCompact ? 10 : isCompact ? 14 : 22;
 
-    this.rotateButtonsPanel.style.left = `${panelLeft}px`;
-    this.rotateButtonsPanel.style.bottom = `${bottom}px`;
-    this.rotateButtonsPanel.style.gap = `${panelGap}px`;
-    this.rotateButtonsPanel.style.padding = `${panelPadding}px`;
-    this.rotateButtonsPanel.style.borderRadius = `${panelRadius}px`;
+  const panelGap = isLandscapeCompact ? 3 : isCompact ? 5 : 8;
+  const panelPadding = isLandscapeCompact ? 4 : isCompact ? 5 : 8;
+  const panelRadius = isLandscapeCompact ? 10 : isCompact ? 11 : 14;
 
-    for (const button of Object.values(this.rotateButtons)) {
-      if (!button) continue;
-      button.style.width = `${buttonWidth}px`;
-      button.style.height = `${buttonHeight}px`;
+  const buttonWidth = isLandscapeCompact ? 42 : isCompact ? 50 : 68;
+  const buttonHeight = isLandscapeCompact ? 30 : isCompact ? 38 : 50;
 
-      const children = button.children;
-      if (children[0]) children[0].style.fontSize = isLandscapeCompact ? "10px" : isCompact ? "12px" : "13px";
-      if (children[1]) children[1].style.fontSize = isLandscapeCompact ? "8px" : isCompact ? "9px" : "10px";
-      if (children[2]) children[2].style.fontSize = isLandscapeCompact ? "7px" : isCompact ? "8px" : "9px";
-    }
+  this.rotateButtonsPanel.style.left = `${panelLeft}px`;
+  this.rotateButtonsPanel.style.bottom = `${bottom}px`;
+  this.rotateButtonsPanel.style.gap = `${panelGap}px`;
+  this.rotateButtonsPanel.style.padding = `${panelPadding}px`;
+  this.rotateButtonsPanel.style.borderRadius = `${panelRadius}px`;
+
+  for (const button of Object.values(this.rotateButtons)) {
+    if (!button) continue;
+    button.style.width = `${buttonWidth}px`;
+    button.style.height = `${buttonHeight}px`;
+
+    const children = button.children;
+    if (children[0]) children[0].style.fontSize = isLandscapeCompact ? "9px" : isCompact ? "11px" : "13px";
+    if (children[1]) children[1].style.fontSize = isLandscapeCompact ? "7px" : isCompact ? "8px" : "10px";
+    if (children[2]) children[2].style.fontSize = isLandscapeCompact ? "6px" : isCompact ? "7px" : "9px";
   }
+}
 
   createMovePad() {
     let panel = document.getElementById("movePadPanel");
@@ -920,7 +922,7 @@ syncRotationGizmo() {
     this.updateMovePadUI();
   }
 
- updateMovePadLayout() {
+updateMovePadLayout() {
   if (!this.movePadPanel) return;
 
   const metrics = this.getResponsiveUiMetrics();
@@ -929,26 +931,24 @@ syncRotationGizmo() {
 
   const shortSide = Math.max(1, metrics.shortSide);
 
-  // 캔버스 비율 기준으로 크기 계산
   const panelSize = isLandscapeCompact
-    ? THREE.MathUtils.clamp(shortSide * 0.20, 86, 112)
+    ? THREE.MathUtils.clamp(shortSide * 0.18, 78, 98)
     : isCompact
-    ? THREE.MathUtils.clamp(shortSide * 0.24, 96, 132)
+    ? THREE.MathUtils.clamp(shortSide * 0.22, 88, 118)
     : THREE.MathUtils.clamp(shortSide * 0.19, 132, 172);
 
   const cellSize = isLandscapeCompact
-    ? THREE.MathUtils.clamp(panelSize * 0.28, 24, 32)
+    ? THREE.MathUtils.clamp(panelSize * 0.27, 22, 28)
     : isCompact
-    ? THREE.MathUtils.clamp(panelSize * 0.30, 28, 38)
+    ? THREE.MathUtils.clamp(panelSize * 0.29, 26, 34)
     : THREE.MathUtils.clamp(panelSize * 0.29, 36, 48);
 
-  const gap = isLandscapeCompact ? 4 : isCompact ? 5 : 6;
-  const padding = isLandscapeCompact ? 5 : isCompact ? 6 : 8;
-  const radius = isLandscapeCompact ? 12 : isCompact ? 14 : 16;
+  const gap = isLandscapeCompact ? 3 : isCompact ? 4 : 6;
+  const padding = isLandscapeCompact ? 4 : isCompact ? 5 : 8;
+  const radius = isLandscapeCompact ? 11 : isCompact ? 13 : 16;
 
-  // 우측 하단 배치
-  const right = isLandscapeCompact ? 12 : isCompact ? 14 : 18;
-  const bottom = isLandscapeCompact ? 64 : isCompact ? 74 : 22;
+  const right = isLandscapeCompact ? 6 : isCompact ? 8 : 18;
+  const bottom = isLandscapeCompact ? 10 : isCompact ? 14 : 22;
 
   this.movePadPanel.style.left = "auto";
   this.movePadPanel.style.right = `${right}px`;
@@ -964,11 +964,11 @@ syncRotationGizmo() {
     btn.style.width = `${Math.round(cellSize)}px`;
     btn.style.height = `${Math.round(cellSize)}px`;
     btn.style.fontSize = isLandscapeCompact
-      ? `${Math.round(cellSize * 0.42)}px`
+      ? `${Math.round(cellSize * 0.4)}px`
       : isCompact
-      ? `${Math.round(cellSize * 0.44)}px`
+      ? `${Math.round(cellSize * 0.42)}px`
       : `${Math.round(cellSize * 0.40)}px`;
-    btn.style.borderRadius = `${Math.max(10, Math.round(cellSize * 0.28))}px`;
+    btn.style.borderRadius = `${Math.max(9, Math.round(cellSize * 0.26))}px`;
     btn.style.justifySelf = "center";
     btn.style.alignSelf = "center";
   }
