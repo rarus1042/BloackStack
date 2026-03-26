@@ -3,6 +3,7 @@ import { Renderer } from "./Renderer.js";
 import { Physics } from "./Physics.js";
 import { BlockSystem } from "./BlockSystem.js";
 import { SupabaseRankingService } from "./SupabaseRankingService.js";
+import { PlacementGuide } from "./PlacementGuide.js";
 
 export class Game {
   constructor() {
@@ -14,11 +15,11 @@ export class Game {
       gridStep: 1,
       previewClampPadding: 0.55,
 
-      slowFallSpeed: 0.75,
-      fastFallSpeed: 5.5,
+     slowFallSpeed: 2.0,
+      fastFallSpeed: 4.0,
 
-      spawnClearance: 5.2,
-      minSpawnHeight: 5.5,
+      spawnClearance: 10.4,
+      minSpawnHeight: 8.0,
 
       heightStep: 0.5,
 
@@ -33,6 +34,10 @@ export class Game {
     this.physics = new Physics(this.config);
 
     this.blockSystem = null;
+    this.placementGuide = new PlacementGuide(this.renderer.scene, {
+      stageSize: this.config.stageSize,
+      padding: this.config.previewClampPadding ?? 0.35,
+    });
 
     this.nickname = "Player";
     this.bestHeight = 0;
@@ -41,7 +46,11 @@ export class Game {
     this.isGameOver = false;
     this.isRestarting = false;
     this.isSessionStarted = false;
+    this.isStartOverlayReady = false;
 
+    this.isActionHolding = false;
+    this.actionHoldTimeoutId = null;
+    this.actionHoldTriggeredInstant = false;
     this.rankingService = new SupabaseRankingService({
       url: "https://lrnrdkgnngayetdkrmoo.supabase.co",
       key: "sb_publishable_kF_jTxBiSpZHh4j59N4AZA_nA6rPkOn",
@@ -109,14 +118,18 @@ export class Game {
 
 this.animate = this.animate.bind(this);
 this.onResize = this.onResize.bind(this);
-this.onActionButtonClick = this.onActionButtonClick.bind(this);
 this.onBgmToggleClick = this.onBgmToggleClick.bind(this);
 this.onRotateStepButtonClick = this.onRotateStepButtonClick.bind(this);
 this.onMoveButtonClick = this.onMoveButtonClick.bind(this);
 this.onKeyDown = this.onKeyDown.bind(this);
+this.onKeyUp = this.onKeyUp.bind(this);
 this.unlockBgm = this.unlockBgm.bind(this);
 this.loadingLoop = this.loadingLoop.bind(this);
 this.onStartButtonClick = this.onStartButtonClick.bind(this);
+
+this.onActionButtonPointerDown = this.onActionButtonPointerDown.bind(this);
+this.onActionButtonPointerUp = this.onActionButtonPointerUp.bind(this);
+this.onActionButtonPointerCancel = this.onActionButtonPointerCancel.bind(this);
 
 this.createBasicLabels();
 this.createLoadingScreen();
@@ -542,16 +555,19 @@ this.setupBgmUnlock();
     this.startOverlay = overlay;
   }
 
-  updateStartOverlayLayout() {
-    if (!this.startOverlay) return;
-    const metrics = this.getResponsiveUiMetrics();
-    this.startOverlay.style.display = this.isSessionStarted ? "none" : "flex";
-    const button = this.startButton;
-    if (button) {
-      button.style.height = metrics.isMobile ? "48px" : "52px";
-      button.style.fontSize = metrics.isMobile ? "15px" : "16px";
-    }
+updateStartOverlayLayout() {
+  if (!this.startOverlay) return;
+
+  const metrics = this.getResponsiveUiMetrics();
+  this.startOverlay.style.display =
+    this.isStartOverlayReady && !this.isSessionStarted ? "flex" : "none";
+
+  const button = this.startButton;
+  if (button) {
+    button.style.height = metrics.isMobile ? "48px" : "52px";
+    button.style.fontSize = metrics.isMobile ? "15px" : "16px";
   }
+}
 
   createNextPreviewUI() {
     let panel = document.getElementById("nextBlockPanel");
@@ -1236,6 +1252,55 @@ this.setupBgmUnlock();
     this.renderNextPreview();
   }
 
+  updatePlacementGhost() {
+  if (!this.placementGuide || !this.blockSystem) return;
+
+  const block = this.blockSystem.getCurrentPreviewBlock?.();
+  if (!block?.mesh || !this.blockSystem.getPlacementPrediction) {
+    this.placementGuide.hideProjection();
+    this.placementGuide.hidePredictionGhost();
+    return;
+  }
+
+  const prediction = this.blockSystem.getPlacementPrediction();
+  if (!prediction?.position || !prediction?.quaternion) {
+    this.placementGuide.hideProjection();
+    this.placementGuide.hidePredictionGhost();
+    return;
+  }
+
+  const currentBottomY = prediction.currentBottomY ?? block.mesh.position.y;
+  const predictedBottomY = prediction.predictedBottomY ?? prediction.position.y;
+
+  const projectionStart = new THREE.Vector3(
+    block.mesh.position.x,
+    currentBottomY + 0.01,
+    block.mesh.position.z
+  );
+
+  const projectionEnd = new THREE.Vector3(
+    prediction.position.x,
+    predictedBottomY + 0.008,
+    prediction.position.z
+  );
+
+  this.placementGuide.setHeight(block.mesh.position.y);
+  this.placementGuide.show();
+
+  if (projectionEnd.y >= projectionStart.y - 0.002) {
+    this.placementGuide.hideProjection();
+  } else {
+    this.placementGuide.updateProjection(projectionStart, projectionEnd);
+  }
+
+  this.placementGuide.updatePredictionGhost(
+    block,
+    prediction.position,
+    prediction.quaternion
+  );
+}
+
+
   renderNextPreview() {
     if (!this.nextPreviewRenderer || !this.nextPreviewScene || !this.nextPreviewCamera) return;
 
@@ -1293,43 +1358,43 @@ this.setupBgmUnlock();
     return result;
   }
 
-  updateControlButton() {
-    if (!this.actionButton || !this.blockSystem) return;
+ updateControlButton() {
+  if (!this.actionButton || !this.blockSystem) return;
 
-    if (!this.isSessionStarted) {
-      this.actionButton.disabled = true;
-      this.actionButton.textContent = "시작 대기";
-      this.actionButton.style.opacity = "0.5";
-      return;
-    }
+  if (!this.isSessionStarted) {
+    this.actionButton.disabled = true;
+    this.actionButton.textContent = "시작 대기";
+    this.actionButton.style.opacity = "0.5";
+    return;
+  }
 
-    if (this.isGameOver || this.isRestarting) {
-      this.actionButton.disabled = true;
-      this.actionButton.textContent = "대기중";
-      this.actionButton.style.opacity = "0.5";
-      return;
-    }
-
-    const hasPreview = !!this.blockSystem.getCurrentPreviewBlock();
-
-    if (hasPreview && this.blockSystem.state === "EDIT") {
-      this.actionButton.disabled = false;
-      this.actionButton.textContent = "빠른 낙하";
-      this.actionButton.style.opacity = "1";
-      return;
-    }
-
-    if (this.blockSystem.state === "WAITING") {
-      this.actionButton.disabled = true;
-      this.actionButton.textContent = "착지중";
-      this.actionButton.style.opacity = "0.5";
-      return;
-    }
-
+  if (this.isGameOver || this.isRestarting) {
     this.actionButton.disabled = true;
     this.actionButton.textContent = "대기중";
     this.actionButton.style.opacity = "0.5";
+    return;
   }
+
+  const hasPreview = !!this.blockSystem.getCurrentPreviewBlock();
+
+  if (hasPreview && this.blockSystem.state === "EDIT") {
+    this.actionButton.disabled = false;
+    this.actionButton.textContent = this.isActionHolding ? "가속 중" : "가속 낙하";
+    this.actionButton.style.opacity = "1";
+    return;
+  }
+
+  if (this.blockSystem.state === "WAITING") {
+    this.actionButton.disabled = true;
+    this.actionButton.textContent = "착지중";
+    this.actionButton.style.opacity = "0.5";
+    return;
+  }
+
+  this.actionButton.disabled = true;
+  this.actionButton.textContent = "대기중";
+  this.actionButton.style.opacity = "0.5";
+}
 
   updateRotateButtonsUI() {
     const canRotate =
@@ -1396,19 +1461,62 @@ this.setupBgmUnlock();
     this.actionButton.style.zIndex = "28";
   }
 
-  async onActionButtonClick() {
-    if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
-    if (!this.isSessionStarted) return;
+startActionHold() {
+  if (this.isActionHolding) return;
+  if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
+  if (!this.isSessionStarted) return;
+  if (!this.blockSystem.getCurrentPreviewBlock()) return;
+  if (this.blockSystem.state !== "EDIT") return;
 
-    const dropped = this.blockSystem.dropCurrentBlockFast();
-    if (dropped) {
-      await this.updateNextPreviewUI();
-    }
+  this.isActionHolding = true;
 
-    this.updateControlButton();
-    this.updateRotateButtonsUI();
-    this.updateMovePadUI();
+  // ✔ 가속만 적용 (즉시 착지 없음)
+  this.blockSystem.beginFastDropHold();
+
+  // ❌ 기존 2초 타이머 제거됨
+  if (this.actionHoldTimeoutId) {
+    clearTimeout(this.actionHoldTimeoutId);
+    this.actionHoldTimeoutId = null;
   }
+
+  this.updateControlButton();
+}
+
+endActionHold(skipBlockReset = false) {
+  if (this.actionHoldTimeoutId) {
+    clearTimeout(this.actionHoldTimeoutId);
+    this.actionHoldTimeoutId = null;
+  }
+
+  if (!skipBlockReset && this.blockSystem) {
+    this.blockSystem.endFastDropHold();
+  }
+
+  this.isActionHolding = false;
+  this.actionHoldTriggeredInstant = false;
+
+  this.updateControlButton();
+  this.updateRotateButtonsUI();
+  this.updateMovePadUI();
+}
+
+onActionButtonPointerDown(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  this.startActionHold();
+}
+
+onActionButtonPointerUp(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  this.endActionHold();
+}
+
+onActionButtonPointerCancel(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  this.endActionHold();
+}
 
   onRotateStepButtonClick(event) {
     event.preventDefault();
@@ -1493,70 +1601,69 @@ this.setupBgmUnlock();
     this.movePreviewByDirection(dir);
   }
 
-  onKeyDown(event) {
-    if (event.repeat) return;
-    if (!this.blockSystem) return;
+ onKeyDown(event) {
+  if (event.repeat) return;
+  if (!this.blockSystem) return;
 
-    const key = event.key.toLowerCase();
+  const key = event.key.toLowerCase();
 
-    if (!this.isSessionStarted) {
-      if (key === "enter" || key === " ") {
-        event.preventDefault();
-        this.onStartButtonClick();
-      }
-      return;
-    }
-
-    if (this.isGameOver || this.isRestarting) return;
-
-    if (key === "q") {
+  if (!this.isSessionStarted) {
+    if ((key === "enter" || key === " ") && this.isStartOverlayReady) {
       event.preventDefault();
-      this.blockSystem.rotatePreview90("x");
-      return;
+      this.onStartButtonClick();
     }
-
-    if (key === "w") {
-      event.preventDefault();
-      this.blockSystem.rotatePreview90("y");
-      return;
-    }
-
-    if (key === "e") {
-      event.preventDefault();
-      this.blockSystem.rotatePreview90("z");
-      return;
-    }
-
-    if (key === "arrowup") {
-      event.preventDefault();
-      this.movePreviewByDirection("up");
-      return;
-    }
-
-    if (key === "arrowdown") {
-      event.preventDefault();
-      this.movePreviewByDirection("down");
-      return;
-    }
-
-    if (key === "arrowleft") {
-      event.preventDefault();
-      this.movePreviewByDirection("left");
-      return;
-    }
-
-    if (key === "arrowright") {
-      event.preventDefault();
-      this.movePreviewByDirection("right");
-      return;
-    }
-
-    if (key === " " || key === "enter") {
-      event.preventDefault();
-      this.onActionButtonClick();
-    }
+    return;
   }
 
+  if (this.isGameOver || this.isRestarting) return;
+
+  if (key === "q") {
+    event.preventDefault();
+    this.blockSystem.rotatePreview90("x");
+    return;
+  }
+
+  if (key === "w") {
+    event.preventDefault();
+    this.blockSystem.rotatePreview90("y");
+    return;
+  }
+
+  if (key === "e") {
+    event.preventDefault();
+    this.blockSystem.rotatePreview90("z");
+    return;
+  }
+
+  if (key === "arrowup") {
+    event.preventDefault();
+    this.movePreviewByDirection("up");
+    return;
+  }
+
+  if (key === "arrowdown") {
+    event.preventDefault();
+    this.movePreviewByDirection("down");
+    return;
+  }
+
+  if (key === "arrowleft") {
+    event.preventDefault();
+    this.movePreviewByDirection("left");
+    return;
+  }
+
+  if (key === "arrowright") {
+    event.preventDefault();
+    this.movePreviewByDirection("right");
+    return;
+  }
+
+  if (key === " " || key === "enter") {
+    event.preventDefault();
+    this.startActionHold();
+  }
+}
   onResize() {
     if (this.renderer.resize) {
       this.renderer.resize(window.innerWidth, window.innerHeight);
@@ -1565,22 +1672,32 @@ this.setupBgmUnlock();
     this.applyGlobalUiLayout();
   }
 
-  async onStartButtonClick() {
-    if (this.isSessionStarted) return;
-    if (!this.blockSystem) return;
+  onKeyUp(event) {
+  const key = event.key.toLowerCase();
 
-    this.isSessionStarted = true;
-    this.blockSystem.setGameStarted(true);
-    this.updateStartOverlayLayout();
-
-    await this.blockSystem.getNextBlockInfo();
-    await this.blockSystem.createBlock();
-    await this.updateNextPreviewUI();
-
-    this.updateControlButton();
-    this.updateRotateButtonsUI();
-    this.updateMovePadUI();
+  if (key === " " || key === "enter") {
+    event.preventDefault();
+    this.endActionHold();
   }
+}
+
+async onStartButtonClick() {
+  if (!this.isStartOverlayReady) return;
+  if (this.isSessionStarted) return;
+  if (!this.blockSystem) return;
+
+  this.isSessionStarted = true;
+  this.blockSystem.setGameStarted(true);
+  this.updateStartOverlayLayout();
+
+  await this.blockSystem.getNextBlockInfo();
+  await this.blockSystem.createBlock();
+  await this.updateNextPreviewUI();
+
+  this.updateControlButton();
+  this.updateRotateButtonsUI();
+  this.updateMovePadUI();
+}
 
   async handleFail() {
     if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
@@ -1633,8 +1750,9 @@ this.setupBgmUnlock();
     if (this.isRestarting || !this.blockSystem) return;
 
     this.isRestarting = true;
-
+    this.endActionHold();
     this.blockSystem.reset();
+        this.placementGuide?.hide();
     this.blockSystem.setGameStarted(false);
 
     this.renderer.resetCamera();
@@ -1773,9 +1891,14 @@ this.setupBgmUnlock();
       await this.updateNextPreviewUI();
       await this.refreshLeaderboardUI(true);
 
-      window.addEventListener("resize", this.onResize);
+    window.addEventListener("resize", this.onResize);
       window.addEventListener("keydown", this.onKeyDown);
-      this.actionButton?.addEventListener("click", this.onActionButtonClick);
+      window.addEventListener("keyup", this.onKeyUp);
+
+      this.actionButton?.addEventListener("pointerdown", this.onActionButtonPointerDown);
+      this.actionButton?.addEventListener("pointerup", this.onActionButtonPointerUp);
+      this.actionButton?.addEventListener("pointercancel", this.onActionButtonPointerCancel);
+      this.actionButton?.addEventListener("pointerleave", this.onActionButtonPointerCancel);
 
       this.setLoadingProgress(1, "준비 완료");
 
@@ -1786,6 +1909,8 @@ this.setupBgmUnlock();
 
       await this.waitForFirstVisibleFrame();
       await this.hideLoadingScreen();
+
+      this.isStartOverlayReady = true;
       this.updateStartOverlayLayout();
     } catch (error) {
       console.error("Game start failed:", error);
@@ -1848,11 +1973,12 @@ this.setupBgmUnlock();
 
     this.lastTime = time;
 
-    if (!this.isGameOver && !this.isRestarting && this.blockSystem) {
+       if (!this.isGameOver && !this.isRestarting && this.blockSystem) {
       this.physics.step();
       this.blockSystem.update(dt);
 
       this.triggerLandingEffects();
+      this.updatePlacementGhost();
 
       const followHeight = this.blockSystem.getMaxHeight();
       this.renderer.updateCamera(followHeight);
@@ -1863,7 +1989,7 @@ this.setupBgmUnlock();
       this.updateMovePadUI();
       await this.updateNextPreviewUI();
     }
-
+    
     if (this.renderer.update) {
       this.renderer.update(dt);
     }

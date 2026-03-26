@@ -17,7 +17,7 @@ export class Renderer {
       0.1,
       1000
     );
-    this.camera.position.set(8.4, 6.4, 8.4);
+    this.camera.position.set(8.4, 15, 15);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,

@@ -217,48 +217,109 @@ export class BlockFactory {
   }
 
   buildShapeData(entry) {
-    const halfExtent = this.cellSize / 2;
-    const colliderHalfExtent = halfExtent * 0.94;
+  const halfExtent = this.cellSize / 2;
+  const colliderHalfExtent = halfExtent * 0.94;
 
-    const cellOffsets = entry.cells.map(([x, y, z]) => ({
-      x: x * this.cellSize,
-      y: y * this.cellSize,
-      z: z * this.cellSize,
-    }));
+  const rawCellOffsets = entry.cells.map(([x, y, z]) => ({
+    x: x * this.cellSize,
+    y: y * this.cellSize,
+    z: z * this.cellSize,
+  }));
 
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
-    let footprintRadius = 0;
+  let centerMinX = Infinity;
+  let centerMaxX = -Infinity;
+  let centerMinY = Infinity;
+  let centerMaxY = -Infinity;
+  let centerMinZ = Infinity;
+  let centerMaxZ = -Infinity;
 
-    for (const c of cellOffsets) {
-      minX = Math.min(minX, c.x - colliderHalfExtent);
-      maxX = Math.max(maxX, c.x + colliderHalfExtent);
-      minY = Math.min(minY, c.y - colliderHalfExtent);
-      maxY = Math.max(maxY, c.y + colliderHalfExtent);
-      minZ = Math.min(minZ, c.z - colliderHalfExtent);
-      maxZ = Math.max(maxZ, c.z + colliderHalfExtent);
-
-      const r = Math.hypot(c.x, c.z) + colliderHalfExtent;
-      if (r > footprintRadius) footprintRadius = r;
-    }
-
-    return {
-      key: entry.key,
-      name: entry.name,
-      color: entry.color,
-      weight: entry.weight,
-      cellOffsets,
-      halfExtent,
-      colliderHalfExtent,
-      halfHeight: (maxY - minY) * 0.5,
-      footprintRadius,
-      bounds: { minX, maxX, minY, maxY, minZ, maxZ },
-    };
+  for (const c of rawCellOffsets) {
+    if (c.x < centerMinX) centerMinX = c.x;
+    if (c.x > centerMaxX) centerMaxX = c.x;
+    if (c.y < centerMinY) centerMinY = c.y;
+    if (c.y > centerMaxY) centerMaxY = c.y;
+    if (c.z < centerMinZ) centerMinZ = c.z;
+    if (c.z > centerMaxZ) centerMaxZ = c.z;
   }
+
+  const shapeCenter = {
+    x: (centerMinX + centerMaxX) * 0.5,
+    y: (centerMinY + centerMaxY) * 0.5,
+    z: (centerMinZ + centerMaxZ) * 0.5,
+  };
+
+  // 전체 블럭 중심에 가장 가까운 "실제 셀 중심"을 앵커로 선택
+  let anchor = rawCellOffsets[0];
+  let bestDist2 = Infinity;
+  let bestTie = Infinity;
+
+  for (const c of rawCellOffsets) {
+    const dx = c.x - shapeCenter.x;
+    const dy = c.y - shapeCenter.y;
+    const dz = c.z - shapeCenter.z;
+
+    const dist2 = dx * dx + dy * dy + dz * dz;
+
+    // tie-break:
+    // 1) y 중심에 가까운 셀
+    // 2) x 중심에 가까운 셀
+    // 3) z 중심에 가까운 셀
+    const tie =
+      Math.abs(dy) * 10000 +
+      Math.abs(dx) * 100 +
+      Math.abs(dz);
+
+    if (
+      dist2 < bestDist2 - 1e-9 ||
+      (Math.abs(dist2 - bestDist2) <= 1e-9 && tie < bestTie)
+    ) {
+      bestDist2 = dist2;
+      bestTie = tie;
+      anchor = c;
+    }
+  }
+
+  // 선택된 셀 중심이 원점(스폰포인트)에 오도록 보정
+  const cellOffsets = rawCellOffsets.map((c) => ({
+    x: c.x - anchor.x,
+    y: c.y - anchor.y,
+    z: c.z - anchor.z,
+  }));
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  let footprintRadius = 0;
+
+  for (const c of cellOffsets) {
+    minX = Math.min(minX, c.x - colliderHalfExtent);
+    maxX = Math.max(maxX, c.x + colliderHalfExtent);
+    minY = Math.min(minY, c.y - colliderHalfExtent);
+    maxY = Math.max(maxY, c.y + colliderHalfExtent);
+    minZ = Math.min(minZ, c.z - colliderHalfExtent);
+    maxZ = Math.max(maxZ, c.z + colliderHalfExtent);
+
+    const r = Math.hypot(c.x, c.z) + colliderHalfExtent;
+    if (r > footprintRadius) footprintRadius = r;
+  }
+
+  return {
+    key: entry.key,
+    name: entry.name,
+    color: entry.color,
+    weight: entry.weight,
+    cellOffsets,
+    halfExtent,
+    colliderHalfExtent,
+    halfHeight: (maxY - minY) * 0.5,
+    footprintRadius,
+    anchorCellOffset: { x: 0, y: 0, z: 0 },
+    bounds: { minX, maxX, minY, maxY, minZ, maxZ },
+  };
+}
 
   addOutlineToMesh(mesh, isPreview = false) {
     if (!mesh?.geometry) return;

@@ -23,9 +23,10 @@ export class BlockSystem {
 
     this.slowFallSpeed = options.slowFallSpeed ?? 0.75;
     this.fastFallSpeed = options.fastFallSpeed ?? 5.5;
+    this.previewFallMultiplier = 1;
 
-    this.spawnClearance = options.spawnClearance ?? 5.2;
-    this.minSpawnHeight = options.minSpawnHeight ?? 5.5;
+    this.spawnClearance = options.spawnClearance ?? 10.4;
+    this.minSpawnHeight = options.minSpawnHeight ?? 11.0;
     this.previewClampPadding = options.previewClampPadding ?? 0.4;
 
     this.liveHeight = 0;
@@ -149,6 +150,7 @@ export class BlockSystem {
       this.previewY = spawnY;
       this.previewZ = 0;
       this.previewQuaternion.identity();
+      this.previewFallMultiplier = 1;
 
       this.currentBlock = block;
       this.blocks.push(block);
@@ -179,50 +181,125 @@ export class BlockSystem {
     this.currentBlock.body.setRotation(this.previewQuaternion, true);
   }
 
-  setPreviewPosition(x, z) {
-    if (!this.currentBlock) return;
-    if (this.currentBlock.state !== "preview") return;
-    if (this.state !== "EDIT") return;
+setPreviewPosition(x, z) {
+  if (!this.currentBlock) return false;
+  if (this.currentBlock.state !== "preview") return false;
+  if (this.state !== "EDIT") return false;
 
-    const clamped = this.clampPreviewPosition(x, z);
-    this.previewX = clamped.x;
-    this.previewZ = clamped.z;
-    this.applyPreviewTransform();
-  }
+  const block = this.currentBlock;
+  const shapeData = block.collision;
+  if (!shapeData) return false;
 
-  movePreviewByGrid(dx, dz) {
-    if (!this.currentBlock) return false;
-    if (this.currentBlock.state !== "preview") return false;
-    if (this.state !== "EDIT") return false;
+  const startX = this.previewX;
+  const startZ = this.previewZ;
 
-    this.setPreviewPosition(this.previewX + dx, this.previewZ + dz);
+  const clampedTarget = this.clampPreviewPosition(x, z);
+  const targetX = clampedTarget.x;
+  const targetZ = clampedTarget.z;
+
+  const deltaX = targetX - startX;
+  const deltaZ = targetZ - startZ;
+
+  if (Math.abs(deltaX) < 1e-9 && Math.abs(deltaZ) < 1e-9) {
     return true;
   }
 
-  rotatePreviewByAxis(axis, angle) {
-    if (!this.currentBlock || this.currentBlock.state !== "preview") return false;
-    if (this.state !== "EDIT") return false;
+  // 이동 경로를 잘게 나눠서 "갈 수 있는 마지막 위치"를 찾는다.
+  const distance = Math.hypot(deltaX, deltaZ);
+  const subStepSize = Math.max(0.08, this.gridStep * 0.2);
+  const steps = Math.max(1, Math.ceil(distance / subStepSize));
 
-    if (axis === "x") this.tempAxis.set(1, 0, 0);
-    else if (axis === "y") this.tempAxis.set(0, 1, 0);
-    else if (axis === "z") this.tempAxis.set(0, 0, 1);
-    else return false;
+  let lastFreeX = startX;
+  let lastFreeZ = startZ;
 
-    this.tempAxis.applyQuaternion(this.previewQuaternion).normalize();
-    this.deltaQuaternion.setFromAxisAngle(this.tempAxis, angle);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const testX = startX + deltaX * t;
+    const testZ = startZ + deltaZ * t;
 
-    this.previewQuaternion
-      .copy(this.deltaQuaternion.multiply(this.previewQuaternion))
-      .normalize();
+    const testPosition = new THREE.Vector3(testX, this.previewY, testZ);
 
-    this.applyPreviewTransform();
-    return true;
+    if (this.collidesShapeAt(testPosition, this.previewQuaternion, shapeData, block)) {
+      break;
+    }
+
+    lastFreeX = testX;
+    lastFreeZ = testZ;
   }
+
+  this.previewX = this.snapToGrid(lastFreeX);
+  this.previewZ = this.snapToGrid(lastFreeZ);
+  this.applyPreviewTransform();
+  return true;
+}
+
+movePreviewByGrid(dx, dz) {
+  if (!this.currentBlock) return false;
+  if (this.currentBlock.state !== "preview") return false;
+  if (this.state !== "EDIT") return false;
+
+  const beforeX = this.previewX;
+  const beforeZ = this.previewZ;
+
+  const moved = this.setPreviewPosition(this.previewX + dx, this.previewZ + dz);
+  if (!moved) return false;
+
+  return (
+    Math.abs(this.previewX - beforeX) > 1e-9 ||
+    Math.abs(this.previewZ - beforeZ) > 1e-9
+  );
+}
+
+rotatePreviewByAxis(axis, angle) {
+  if (!this.currentBlock || this.currentBlock.state !== "preview") return false;
+  if (this.state !== "EDIT") return false;
+
+  const block = this.currentBlock;
+  const shapeData = block.collision;
+  if (!shapeData) return false;
+
+  if (axis === "x") this.tempAxis.set(1, 0, 0);
+  else if (axis === "y") this.tempAxis.set(0, 1, 0);
+  else if (axis === "z") this.tempAxis.set(0, 0, 1);
+  else return false;
+
+  this.tempAxis.applyQuaternion(this.previewQuaternion).normalize();
+  this.deltaQuaternion.setFromAxisAngle(this.tempAxis, angle);
+
+  const nextQuaternion = this.deltaQuaternion
+    .clone()
+    .multiply(this.previewQuaternion)
+    .normalize();
+
+  const testPosition = new THREE.Vector3(this.previewX, this.previewY, this.previewZ);
+
+  // 회전 완료 상태가 충돌이면 회전 취소
+  if (this.collidesShapeAt(testPosition, nextQuaternion, shapeData, block)) {
+    return false;
+  }
+
+  this.previewQuaternion.copy(nextQuaternion);
+  this.applyPreviewTransform();
+  return true;
+}
 
   rotatePreview90(axis, turns = 1) {
     const normalizedTurns = Math.trunc(turns);
     if (!normalizedTurns) return false;
     return this.rotatePreviewByAxis(axis, (Math.PI / 2) * normalizedTurns);
+  }
+
+  beginFastDropHold() {
+    if (!this.currentBlock) return false;
+    if (this.currentBlock.state !== "preview") return false;
+    if (this.state !== "EDIT") return false;
+
+    this.previewFallMultiplier = 5;
+    return true;
+  }
+
+  endFastDropHold() {
+    this.previewFallMultiplier = 1;
   }
 
   dropCurrentBlockFast() {
@@ -237,6 +314,7 @@ export class BlockSystem {
     this.lastCommittedBlockId = block.id;
 
     this.currentBlock = null;
+    this.previewFallMultiplier = 1;
     this.state = "WAITING";
     return true;
   }
@@ -253,8 +331,31 @@ export class BlockSystem {
     this.lastCommittedBlockId = block.id;
 
     this.currentBlock = null;
+    this.previewFallMultiplier = 1;
     this.state = "WAITING";
     return true;
+  }
+
+  instantDropCurrentBlock() {
+    if (!this.currentBlock) return false;
+    if (this.currentBlock.state !== "preview") return false;
+    if (this.state !== "EDIT") return false;
+
+    const prediction = this.getPlacementPrediction();
+    if (!prediction?.position) {
+      return this.autoCommitPreviewAtCurrentPosition();
+    }
+
+    this.previewX = prediction.position.x;
+    this.previewY = prediction.position.y;
+    this.previewZ = prediction.position.z;
+
+    if (prediction.quaternion) {
+      this.previewQuaternion.copy(prediction.quaternion);
+    }
+
+    this.applyPreviewTransform();
+    return this.autoCommitPreviewAtCurrentPosition();
   }
 
   updateHeights() {
@@ -300,7 +401,8 @@ export class BlockSystem {
     if (!prediction?.position) return;
 
     const targetY = prediction.position.y;
-    const nextY = Math.max(targetY, this.previewY - this.slowFallSpeed * dt);
+    const speed = this.slowFallSpeed * this.previewFallMultiplier;
+    const nextY = Math.max(targetY, this.previewY - speed * dt);
 
     this.previewY = nextY;
     this.applyPreviewTransform();
@@ -372,6 +474,13 @@ export class BlockSystem {
       predictedBottomY: finalExtents.minY,
     };
   }
+
+  canPlacePreviewAt(position, quaternion) {
+  const block = this.getCurrentPreviewBlock();
+  if (!block?.collision) return false;
+
+  return !this.collidesShapeAt(position, quaternion, block.collision, block);
+}
 
   collidesShapeAt(position, quaternion, shapeData, ignoreBlock = null) {
     const currentExtents = this.getShapeVerticalExtents(position, quaternion, shapeData);
@@ -569,6 +678,7 @@ export class BlockSystem {
     this.previewY = 0;
     this.previewZ = 0;
     this.previewQuaternion.identity();
+    this.previewFallMultiplier = 1;
 
     this.waitingBlockId = 1;
     this.lastCommittedBlockId = 0;
