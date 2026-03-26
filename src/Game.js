@@ -2,37 +2,37 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.m
 import { Renderer } from "./Renderer.js";
 import { Physics } from "./Physics.js";
 import { BlockSystem } from "./BlockSystem.js";
-import { PlacementController } from "./PlacementController.js";
 import { SupabaseRankingService } from "./SupabaseRankingService.js";
 
 export class Game {
   constructor() {
     this.config = {
-      stageSize: 3,
+      stageSize: 7,
       groundHeight: 0.01,
-      stageThickness: 0.12,
+      stageThickness: 0.16,
       blockSize: 1,
-      previewClampPadding: 0.35,
+      gridStep: 1,
+      previewClampPadding: 0.55,
 
-      fallSpeed: 2,
+      slowFallSpeed: 0.75,
+      fastFallSpeed: 5.5,
 
-      spawnClearance: 1.6,
-      minSpawnHeight: 2.3,
+      spawnClearance: 5.2,
+      minSpawnHeight: 5.5,
 
       heightStep: 0.5,
 
       cameraFollowLerp: 0.12,
-      cameraHeightOffset: 0.25,
-      cameraMinTargetY: 0.75,
+      cameraHeightOffset: 0.35,
+      cameraMinTargetY: 0.85,
     };
 
-    this.appVersion = "v0.1.21-mobile-ui-responsive";
+    this.appVersion = "v0.2.0-tetris-grid-drop";
 
     this.renderer = new Renderer(this.config);
     this.physics = new Physics(this.config);
 
     this.blockSystem = null;
-    this.placementController = null;
 
     this.nickname = "Player";
     this.bestHeight = 0;
@@ -40,46 +40,20 @@ export class Game {
     this.lastTime = 0;
     this.isGameOver = false;
     this.isRestarting = false;
+    this.isSessionStarted = false;
 
     this.rankingService = new SupabaseRankingService({
       url: "https://lrnrdkgnngayetdkrmoo.supabase.co",
       key: "sb_publishable_kF_jTxBiSpZHh4j59N4AZA_nA6rPkOn",
       table: "leaderboard_scores",
     });
-    this.settingsButton = null;
-    this.settingsModal = null;
-    this.settingsBackdrop = null;
-    this.settingsCloseButton = null;
-    this.settingsLeaderboardList = null;
-    this.settingsLeaderboardStatus = null;
-    this.settingsBgmToggleButton = null;
-    this.settingsRefreshButton = null;
-    this.isSettingsOpen = false;
-    this.cachedLeaderboard = [];
 
     this.nicknameLabel = document.getElementById("nicknameLabel");
     this.heightLabel = document.getElementById("heightLabel");
     this.actionButton = document.getElementById("actionButton");
 
-    this.bestHeightLabel = document.getElementById("bestHeightLabel");
-    if (!this.bestHeightLabel && this.heightLabel?.parentElement) {
-      this.bestHeightLabel = document.createElement("div");
-      this.bestHeightLabel.id = "bestHeightLabel";
-      this.bestHeightLabel.style.color = "white";
-      this.bestHeightLabel.style.marginTop = "4px";
-      this.heightLabel.parentElement.appendChild(this.bestHeightLabel);
-    }
-
-    this.versionLabel = document.getElementById("versionLabel");
-    if (!this.versionLabel && this.heightLabel?.parentElement) {
-      this.versionLabel = document.createElement("div");
-      this.versionLabel.id = "versionLabel";
-      this.versionLabel.style.color = "rgba(255,255,255,0.7)";
-      this.versionLabel.style.marginTop = "4px";
-      this.versionLabel.style.fontSize = "13px";
-      this.versionLabel.style.letterSpacing = "0.3px";
-      this.heightLabel.parentElement.appendChild(this.versionLabel);
-    }
+    this.bestHeightLabel = null;
+    this.versionLabel = null;
 
     this.nextPanel = null;
     this.nextNameLabel = null;
@@ -94,9 +68,22 @@ export class Game {
     this.rotateButtonsPanel = null;
     this.rotateButtons = { x: null, y: null, z: null };
 
-    this.hoverRotateAxis = null;
-    this.rotationGhost = null;
-    this.rotationGhostAxis = null;
+    this.movePadPanel = null;
+    this.moveButtons = { up: null, left: null, down: null, right: null };
+
+    this.startOverlay = null;
+    this.startButton = null;
+
+    this.settingsButton = null;
+    this.settingsModal = null;
+    this.settingsBackdrop = null;
+    this.settingsCloseButton = null;
+    this.settingsLeaderboardList = null;
+    this.settingsLeaderboardStatus = null;
+    this.settingsBgmToggleButton = null;
+    this.settingsRefreshButton = null;
+    this.isSettingsOpen = false;
+    this.cachedLeaderboard = [];
 
     this.axisColorMap = {
       x: "#ff6b6b",
@@ -104,35 +91,12 @@ export class Game {
       z: "#6ba8ff",
     };
 
-    this.axisVectorMap = {
-      x: new THREE.Vector3(1, 0, 0),
-      y: new THREE.Vector3(0, 1, 0),
-      z: new THREE.Vector3(0, 0, 1),
-    };
-
-    this.joystickRoot = null;
-    this.joystickBase = null;
-    this.joystickKnob = null;
-    this.joystickPointerId = null;
-    this.joystickActive = false;
-
-    this.joystickInput = new THREE.Vector2();
-    this.joystickForward = new THREE.Vector3();
-    this.joystickRight = new THREE.Vector3();
-    this.joystickMove = new THREE.Vector3();
-    this.worldUp = new THREE.Vector3(0, 1, 0);
-
-    this.joystickMoveSpeed = 2.35;
-    this.joystickMaxRadius = 34;
-
     this.bgmEnabled = false;
     this.bgmUnlocked = false;
     this.bgm = new Audio("./assets/bgm.mp3");
     this.bgm.loop = true;
     this.bgm.volume = 0.4;
     this.bgm.preload = "auto";
-
-    this.bgmToggleButton = null;
 
     this.loadingOverlay = null;
     this.loadingStatusLabel = null;
@@ -143,26 +107,41 @@ export class Game {
     this.loadingRafId = null;
     this.isAnimating = false;
 
-    this.animate = this.animate.bind(this);
-    this.onResize = this.onResize.bind(this);
-    this.onActionButtonClick = this.onActionButtonClick.bind(this);
-    this.onBgmToggleClick = this.onBgmToggleClick.bind(this);
-    this.onRotateStepButtonClick = this.onRotateStepButtonClick.bind(this);
-    this.unlockBgm = this.unlockBgm.bind(this);
-    this.loadingLoop = this.loadingLoop.bind(this);
+this.animate = this.animate.bind(this);
+this.onResize = this.onResize.bind(this);
+this.onActionButtonClick = this.onActionButtonClick.bind(this);
+this.onBgmToggleClick = this.onBgmToggleClick.bind(this);
+this.onRotateStepButtonClick = this.onRotateStepButtonClick.bind(this);
+this.onMoveButtonClick = this.onMoveButtonClick.bind(this);
+this.onKeyDown = this.onKeyDown.bind(this);
+this.unlockBgm = this.unlockBgm.bind(this);
+this.loadingLoop = this.loadingLoop.bind(this);
+this.onStartButtonClick = this.onStartButtonClick.bind(this);
 
-    this.onJoystickPointerDown = this.onJoystickPointerDown.bind(this);
-    this.onJoystickPointerMove = this.onJoystickPointerMove.bind(this);
-    this.onJoystickPointerUp = this.onJoystickPointerUp.bind(this);
+this.createBasicLabels();
+this.createLoadingScreen();
+this.createSettingsButton();
+this.createSettingsModal();
+this.createRotateStepButtons();
+this.createMovePad();
+this.createNextPreviewUI();
+this.createStartOverlay();
+this.applyGlobalUiLayout();
+this.setupBgmUnlock();
+  }
 
-    this.createLoadingScreen();
-    this.createSettingsButton();
-    this.createSettingsModal();
-    this.createRotateStepButtons();
-    this.createMoveJoystick();
-    this.createNextPreviewUI();
-    this.applyGlobalUiLayout();
-    this.setupBgmUnlock();
+  createBasicLabels() {
+    if (!this.bestHeightLabel && this.heightLabel?.parentElement) {
+      this.bestHeightLabel = document.createElement("div");
+      this.bestHeightLabel.id = "bestHeightLabel";
+      this.heightLabel.parentElement.appendChild(this.bestHeightLabel);
+    }
+
+    if (!this.versionLabel && this.heightLabel?.parentElement) {
+      this.versionLabel = document.createElement("div");
+      this.versionLabel.id = "versionLabel";
+      this.heightLabel.parentElement.appendChild(this.versionLabel);
+    }
   }
 
   getResponsiveUiMetrics() {
@@ -229,8 +208,8 @@ export class Game {
     const metrics = this.getResponsiveUiMetrics();
     const fontScale = metrics.hudScale;
     const panelWidth = metrics.isMobile
-      ? Math.round(Math.min(172, Math.max(124, metrics.w * 0.32)))
-      : 188;
+      ? Math.round(Math.min(190, Math.max(130, metrics.w * 0.34)))
+      : 208;
 
     panel.style.position = "fixed";
     panel.style.left = metrics.isMobile ? "10px" : "16px";
@@ -248,7 +227,6 @@ export class Game {
     panel.style.zIndex = "24";
     panel.style.pointerEvents = "none";
     panel.style.userSelect = "none";
-    panel.style.webkitUserSelect = "none";
 
     const primaryFont = `${Math.max(11, Math.round((metrics.isMobile ? 11 : 13) * fontScale))}px`;
     const secondaryFont = `${Math.max(10, Math.round((metrics.isMobile ? 10 : 12) * fontScale))}px`;
@@ -264,6 +242,7 @@ export class Game {
       label.style.whiteSpace = "nowrap";
       label.style.overflow = "hidden";
       label.style.textOverflow = "ellipsis";
+      label.style.color = "#fff";
     }
 
     if (this.nicknameLabel) {
@@ -275,18 +254,18 @@ export class Game {
     if (this.heightLabel) {
       this.heightLabel.style.fontSize = primaryFont;
       this.heightLabel.style.fontWeight = "700";
-      this.heightLabel.style.marginTop = `${Math.max(4, Math.round(4 * fontScale))}px`;
+      this.heightLabel.style.marginTop = "4px";
     }
 
     if (this.bestHeightLabel) {
       this.bestHeightLabel.style.fontSize = secondaryFont;
-      this.bestHeightLabel.style.marginTop = `${Math.max(3, Math.round(4 * fontScale))}px`;
+      this.bestHeightLabel.style.marginTop = "4px";
       this.bestHeightLabel.style.opacity = "0.95";
     }
 
     if (this.versionLabel) {
       this.versionLabel.style.fontSize = `${Math.max(9, Math.round((metrics.isMobile ? 9 : 11) * fontScale))}px`;
-      this.versionLabel.style.marginTop = `${Math.max(3, Math.round(4 * fontScale))}px`;
+      this.versionLabel.style.marginTop = "4px";
       this.versionLabel.style.opacity = "0.72";
     }
   }
@@ -298,13 +277,12 @@ export class Game {
     const size = metrics.isMobile
       ? Math.round(34 + 10 * metrics.controlScale)
       : 46;
-    const radius = Math.round(size * 0.3);
 
     this.settingsButton.style.top = metrics.isMobile ? "10px" : "16px";
     this.settingsButton.style.right = metrics.isMobile ? "10px" : "18px";
     this.settingsButton.style.width = `${size}px`;
     this.settingsButton.style.height = `${size}px`;
-    this.settingsButton.style.borderRadius = `${radius}px`;
+    this.settingsButton.style.borderRadius = `${Math.round(size * 0.3)}px`;
     this.settingsButton.style.fontSize = `${Math.max(18, Math.round(size * 0.5))}px`;
   }
 
@@ -323,8 +301,9 @@ export class Game {
     this.applySettingsModalLayout();
     this.applyNextPreviewLayout();
     this.updateRotateButtonsLayout();
-    this.updateJoystickLayout();
+    this.updateMovePadLayout();
     this.updateActionButtonLayout();
+    this.updateStartOverlayLayout();
   }
 
   getNextPreviewLayout() {
@@ -396,27 +375,20 @@ export class Game {
     this.nextPreviewCanvasWrap.style.width = `${layout.canvasSize}px`;
     this.nextPreviewCanvasWrap.style.height = `${layout.canvasSize}px`;
     this.nextPreviewCanvasWrap.style.margin = `${layout.isMobile ? 8 : 10}px auto 0`;
-    this.nextPreviewCanvasWrap.style.display = "flex";
-    this.nextPreviewCanvasWrap.style.alignItems = "center";
-    this.nextPreviewCanvasWrap.style.justifyContent = "center";
 
     this.nextCanvas.width = layout.canvasPixelSize;
     this.nextCanvas.height = layout.canvasPixelSize;
     this.nextCanvas.style.width = `${layout.canvasSize}px`;
     this.nextCanvas.style.height = `${layout.canvasSize}px`;
-    this.nextCanvas.style.display = "block";
-    this.nextCanvas.style.margin = "0 auto";
 
     this.nextNameLabel.style.fontSize = `${layout.nameFont}px`;
     this.nextNameLabel.style.minHeight = `${layout.nameMinHeight}px`;
     this.nextNameLabel.style.marginTop = `${layout.isMobile ? 10 : 16}px`;
-    this.nextNameLabel.style.paddingBottom = layout.isMobile ? "2px" : "4px";
 
     const title = this.nextPanel.querySelector(".next-preview-title");
     if (title) {
       title.style.fontSize = `${layout.titleFont}px`;
       title.style.textAlign = "center";
-      title.style.marginBottom = layout.isMobile ? "0" : "0";
     }
 
     if (this.nextPreviewRenderer) {
@@ -451,8 +423,6 @@ export class Game {
     overlay.style.opacity = "1";
     overlay.style.transition = "opacity 0.35s ease";
     overlay.style.pointerEvents = "auto";
-    overlay.style.userSelect = "none";
-    overlay.style.webkitUserSelect = "none";
 
     const panel = document.createElement("div");
     panel.style.width = "min(320px, 78vw)";
@@ -470,15 +440,12 @@ export class Game {
     title.style.fontWeight = "700";
     title.style.letterSpacing = "1.2px";
     title.style.marginBottom = "12px";
-    title.style.color = "rgba(255,255,255,0.96)";
 
     const status = document.createElement("div");
     status.id = "loadingStatusLabel";
     status.textContent = "로딩 중...";
     status.style.fontSize = "13px";
-    status.style.fontWeight = "500";
     status.style.marginBottom = "10px";
-    status.style.color = "rgba(255,255,255,0.84)";
 
     const progressBar = document.createElement("div");
     progressBar.id = "loadingProgressBar";
@@ -494,7 +461,6 @@ export class Game {
     progressFill.style.height = "100%";
     progressFill.style.borderRadius = "999px";
     progressFill.style.background = "rgba(255,255,255,0.92)";
-    progressFill.style.boxShadow = "0 0 10px rgba(255,255,255,0.18)";
     progressFill.style.transition = "width 0.2s ease";
 
     progressBar.appendChild(progressFill);
@@ -510,6 +476,83 @@ export class Game {
     this.loadingProgressFill = progressFill;
   }
 
+  createStartOverlay() {
+    let overlay = document.getElementById("startOverlay");
+
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "startOverlay";
+      overlay.style.position = "fixed";
+      overlay.style.inset = "0";
+      overlay.style.zIndex = "120";
+      overlay.style.display = "flex";
+      overlay.style.alignItems = "center";
+      overlay.style.justifyContent = "center";
+      overlay.style.background = "rgba(0,0,0,0.34)";
+      overlay.style.backdropFilter = "blur(6px)";
+
+      const panel = document.createElement("div");
+      panel.style.width = "min(420px, 86vw)";
+      panel.style.padding = "28px 22px";
+      panel.style.borderRadius = "20px";
+      panel.style.background = "rgba(18,20,28,0.92)";
+      panel.style.border = "1px solid rgba(255,255,255,0.10)";
+      panel.style.boxShadow = "0 18px 46px rgba(0,0,0,0.30)";
+      panel.style.textAlign = "center";
+      panel.style.color = "#fff";
+
+      const title = document.createElement("div");
+      title.textContent = "3D BLOCK STACK";
+      title.style.fontSize = "24px";
+      title.style.fontWeight = "900";
+      title.style.letterSpacing = "1px";
+
+      const sub = document.createElement("div");
+      sub.textContent =
+        "방향키 / 화면 화살표로 이동 · Q/W/E 또는 XYZ 버튼으로 회전 · 배치 버튼으로 빠른 낙하";
+      sub.style.marginTop = "12px";
+      sub.style.fontSize = "13px";
+      sub.style.lineHeight = "1.55";
+      sub.style.opacity = "0.84";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "게임 시작";
+      button.style.marginTop = "20px";
+      button.style.width = "100%";
+      button.style.height = "52px";
+      button.style.border = "0";
+      button.style.borderRadius = "14px";
+      button.style.background = "linear-gradient(180deg, #5ea0ff 0%, #3d7df0 100%)";
+      button.style.color = "#fff";
+      button.style.fontSize = "16px";
+      button.style.fontWeight = "800";
+      button.style.cursor = "pointer";
+      button.addEventListener("click", this.onStartButtonClick);
+
+      panel.appendChild(title);
+      panel.appendChild(sub);
+      panel.appendChild(button);
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+
+      this.startButton = button;
+    }
+
+    this.startOverlay = overlay;
+  }
+
+  updateStartOverlayLayout() {
+    if (!this.startOverlay) return;
+    const metrics = this.getResponsiveUiMetrics();
+    this.startOverlay.style.display = this.isSessionStarted ? "none" : "flex";
+    const button = this.startButton;
+    if (button) {
+      button.style.height = metrics.isMobile ? "48px" : "52px";
+      button.style.fontSize = metrics.isMobile ? "15px" : "16px";
+    }
+  }
+
   createNextPreviewUI() {
     let panel = document.getElementById("nextBlockPanel");
 
@@ -519,8 +562,6 @@ export class Game {
       panel.style.position = "fixed";
       panel.style.zIndex = "20";
       panel.style.color = "white";
-      panel.style.userSelect = "none";
-      panel.style.webkitUserSelect = "none";
       panel.style.boxSizing = "border-box";
       panel.style.background =
         "linear-gradient(180deg, rgba(18,40,60,0.88) 0%, rgba(25,52,76,0.92) 100%)";
@@ -532,13 +573,9 @@ export class Game {
       const title = document.createElement("div");
       title.className = "next-preview-title";
       title.textContent = "NEXT";
-      title.style.position = "relative";
       title.style.fontWeight = "900";
       title.style.letterSpacing = "1px";
-      title.style.lineHeight = "1.1";
       title.style.color = "rgba(255,255,255,0.98)";
-      title.style.textAlign = "center";
-      title.style.zIndex = "1";
       panel.appendChild(title);
 
       const canvasWrap = document.createElement("div");
@@ -549,26 +586,9 @@ export class Game {
       canvasWrap.style.background =
         "radial-gradient(circle at 50% 28%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 46%, rgba(255,255,255,0.015) 100%)";
       canvasWrap.style.border = "1px solid rgba(255,255,255,0.08)";
-      canvasWrap.style.boxShadow =
-        "inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -18px 30px rgba(0,0,0,0.08)";
-
-      const floorGlow = document.createElement("div");
-      floorGlow.style.position = "absolute";
-      floorGlow.style.left = "50%";
-      floorGlow.style.bottom = "0";
-      floorGlow.style.width = "112%";
-      floorGlow.style.height = "34%";
-      floorGlow.style.transform = "translateX(-50%)";
-      floorGlow.style.borderRadius = "50% 50% 0 0 / 90% 90% 0 0";
-      floorGlow.style.background =
-        "radial-gradient(circle at 50% 100%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.05) 45%, rgba(255,255,255,0.00) 75%)";
-      floorGlow.style.pointerEvents = "none";
-      canvasWrap.appendChild(floorGlow);
 
       const canvas = document.createElement("canvas");
       canvas.id = "nextBlockCanvas";
-      canvas.style.position = "relative";
-      canvas.style.zIndex = "1";
       canvas.style.display = "block";
       canvas.style.margin = "0 auto";
       canvasWrap.appendChild(canvas);
@@ -578,9 +598,7 @@ export class Game {
       name.textContent = "-";
       name.style.textAlign = "center";
       name.style.fontWeight = "700";
-      name.style.letterSpacing = "0.2px";
       name.style.opacity = "0.96";
-      name.style.wordBreak = "break-word";
       name.style.lineHeight = "1.3";
 
       panel.appendChild(canvasWrap);
@@ -630,19 +648,6 @@ export class Game {
     const dir2 = new THREE.DirectionalLight(0xaac8ff, 0.55);
     dir2.position.set(-2.0, 1.2, -2.2);
     this.nextPreviewScene.add(dir2);
-
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(1.45, 40),
-      new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.07,
-        side: THREE.DoubleSide,
-      })
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -1.02;
-    this.nextPreviewScene.add(floor);
   }
 
   createRotateStepButtons() {
@@ -652,9 +657,6 @@ export class Game {
       panel = document.createElement("div");
       panel.id = "rotateStepButtonsPanel";
       panel.style.position = "fixed";
-      panel.style.left = "12px";
-      panel.style.right = "auto";
-      panel.style.bottom = "92px";
       panel.style.zIndex = "25";
       panel.style.display = "flex";
       panel.style.flexDirection = "column";
@@ -665,97 +667,46 @@ export class Game {
       panel.style.backdropFilter = "blur(8px)";
       panel.style.border = "1px solid rgba(255,255,255,0.10)";
       panel.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
-      panel.style.userSelect = "none";
-      panel.style.webkitUserSelect = "none";
 
       const axisInfos = {
-        x: { icon: "↺", title: "X+90", hint: "앞뒤" },
-        y: { icon: "⟲", title: "Y+90", hint: "방향" },
-        z: { icon: "↻", title: "Z+90", hint: "좌우" },
+        x: { icon: "↺", title: "X+90", hint: "Q" },
+        y: { icon: "⟲", title: "Y+90", hint: "W" },
+        z: { icon: "↻", title: "Z+90", hint: "E" },
       };
 
       const makeButton = (axis) => {
         const info = axisInfos[axis];
-
         const button = document.createElement("button");
         button.type = "button";
         button.dataset.axis = axis;
-        button.style.minWidth = "68px";
-        button.style.width = "68px";
-        button.style.height = "50px";
-        button.style.padding = "6px 8px";
         button.style.border = "0";
         button.style.borderRadius = "12px";
         button.style.background = "rgba(255,255,255,0.14)";
         button.style.color = "#fff";
         button.style.cursor = "pointer";
-        button.style.transition =
-          "opacity 0.15s ease, transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease";
         button.style.display = "flex";
         button.style.flexDirection = "column";
         button.style.alignItems = "center";
         button.style.justifyContent = "center";
         button.style.gap = "2px";
-        button.style.position = "relative";
-        button.style.overflow = "hidden";
-
-        const accent = document.createElement("div");
-        accent.style.position = "absolute";
-        accent.style.left = "0";
-        accent.style.top = "0";
-        accent.style.width = "100%";
-        accent.style.height = "2px";
-        accent.style.background = this.axisColorMap[axis];
-        accent.style.opacity = "0.9";
-        button.appendChild(accent);
+        button.addEventListener("click", this.onRotateStepButtonClick);
 
         const icon = document.createElement("div");
         icon.textContent = `${info.icon} ${axis.toUpperCase()}`;
-        icon.style.fontSize = "13px";
         icon.style.fontWeight = "800";
-        icon.style.lineHeight = "1";
         icon.style.color = this.axisColorMap[axis];
-        button.appendChild(icon);
 
         const title = document.createElement("div");
         title.textContent = info.title;
-        title.style.fontSize = "10px";
         title.style.fontWeight = "700";
-        title.style.lineHeight = "1.05";
-        button.appendChild(title);
 
         const hint = document.createElement("div");
         hint.textContent = info.hint;
-        hint.style.fontSize = "9px";
-        hint.style.lineHeight = "1";
         hint.style.opacity = "0.72";
+
+        button.appendChild(icon);
+        button.appendChild(title);
         button.appendChild(hint);
-
-        button.addEventListener("click", this.onRotateStepButtonClick);
-
-        button.addEventListener("pointerdown", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        });
-
-        button.addEventListener("pointerup", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        });
-
-        button.addEventListener("mouseenter", () => {
-          if (button.disabled) return;
-          this.hoverRotateAxis = axis;
-          this.updateRotateButtonsUI();
-        });
-
-        button.addEventListener("mouseleave", () => {
-          if (this.hoverRotateAxis === axis) {
-            this.hoverRotateAxis = null;
-            this.updateRotateButtonsUI();
-          }
-        });
-
         return button;
       };
 
@@ -786,7 +737,7 @@ export class Game {
     const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
 
     const panelLeft = isLandscapeCompact ? 8 : 12;
-    const bottom = isLandscapeCompact ? 68 : isCompact ? 84 : 108;
+    const bottom = isLandscapeCompact ? 70 : isCompact ? 92 : 112;
     const panelGap = isLandscapeCompact ? 4 : isCompact ? 6 : 8;
     const panelPadding = isLandscapeCompact ? 4 : isCompact ? 6 : 8;
     const panelRadius = isLandscapeCompact ? 10 : isCompact ? 12 : 14;
@@ -794,726 +745,105 @@ export class Game {
     const buttonHeight = isLandscapeCompact ? 34 : isCompact ? 42 : 50;
 
     this.rotateButtonsPanel.style.left = `${panelLeft}px`;
-    this.rotateButtonsPanel.style.right = "auto";
     this.rotateButtonsPanel.style.bottom = `${bottom}px`;
-    this.rotateButtonsPanel.style.flexDirection = "column";
     this.rotateButtonsPanel.style.gap = `${panelGap}px`;
     this.rotateButtonsPanel.style.padding = `${panelPadding}px`;
     this.rotateButtonsPanel.style.borderRadius = `${panelRadius}px`;
-    this.rotateButtonsPanel.style.alignItems = "stretch";
 
     for (const button of Object.values(this.rotateButtons)) {
       if (!button) continue;
-
       button.style.width = `${buttonWidth}px`;
-      button.style.minWidth = `${buttonWidth}px`;
       button.style.height = `${buttonHeight}px`;
-      button.style.padding = isLandscapeCompact ? "3px 4px" : isCompact ? "4px 6px" : "6px 8px";
 
       const children = button.children;
-      if (children[1]) children[1].style.fontSize = isLandscapeCompact ? "10px" : isCompact ? "12px" : "13px";
-      if (children[2]) children[2].style.fontSize = isLandscapeCompact ? "8px" : isCompact ? "9px" : "10px";
-      if (children[3]) children[3].style.fontSize = isLandscapeCompact ? "7px" : isCompact ? "8px" : "9px";
+      if (children[0]) children[0].style.fontSize = isLandscapeCompact ? "10px" : isCompact ? "12px" : "13px";
+      if (children[1]) children[1].style.fontSize = isLandscapeCompact ? "8px" : isCompact ? "9px" : "10px";
+      if (children[2]) children[2].style.fontSize = isLandscapeCompact ? "7px" : isCompact ? "8px" : "9px";
     }
   }
 
-  updateRotateButtonsUI() {
-    const hasPreview = !!this.blockSystem?.getCurrentPreviewBlock();
-    const canRotate =
-      !!this.blockSystem &&
-      (this.blockSystem.state === "EDIT" || this.blockSystem.state === "ROTATE") &&
-      hasPreview &&
-      !this.isGameOver &&
-      !this.isRestarting;
+  createMovePad() {
+    let panel = document.getElementById("movePadPanel");
 
-    if (!canRotate) {
-      this.hoverRotateAxis = null;
-      this.clearRotationGhost();
-    }
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "movePadPanel";
+      panel.style.position = "fixed";
+      panel.style.zIndex = "26";
+      panel.style.display = "grid";
+      panel.style.gridTemplateColumns = "repeat(3, 1fr)";
+      panel.style.gridTemplateRows = "repeat(3, 1fr)";
+      panel.style.gap = "6px";
+      panel.style.padding = "8px";
+      panel.style.borderRadius = "16px";
+      panel.style.background = "rgba(0,0,0,0.42)";
+      panel.style.backdropFilter = "blur(8px)";
+      panel.style.border = "1px solid rgba(255,255,255,0.10)";
+      panel.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
 
-    if (this.rotateButtonsPanel) {
-      this.rotateButtonsPanel.style.opacity = canRotate ? "1" : "0.55";
-    }
+      const makeBtn = (dir, text, col, row) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.dataset.dir = dir;
+        btn.textContent = text;
+        btn.style.gridColumn = String(col);
+        btn.style.gridRow = String(row);
+        btn.style.border = "0";
+        btn.style.borderRadius = "12px";
+        btn.style.background = "rgba(255,255,255,0.14)";
+        btn.style.color = "#fff";
+        btn.style.fontWeight = "800";
+        btn.style.cursor = "pointer";
+        btn.addEventListener("click", this.onMoveButtonClick);
+        return btn;
+      };
 
-    for (const [axis, button] of Object.entries(this.rotateButtons)) {
-      if (!button) continue;
+      this.moveButtons.up = makeBtn("up", "▲", 2, 1);
+      this.moveButtons.left = makeBtn("left", "◀", 1, 2);
+      this.moveButtons.down = makeBtn("down", "▼", 2, 3);
+      this.moveButtons.right = makeBtn("right", "▶", 3, 2);
 
-      const isHovered = canRotate && this.hoverRotateAxis === axis;
+      panel.appendChild(this.moveButtons.up);
+      panel.appendChild(this.moveButtons.left);
+      panel.appendChild(this.moveButtons.down);
+      panel.appendChild(this.moveButtons.right);
 
-      button.disabled = !canRotate;
-      button.style.cursor = canRotate ? "pointer" : "default";
-      button.style.opacity = canRotate ? "1" : "0.5";
-      button.style.background = isHovered
-        ? "rgba(255,255,255,0.22)"
-        : canRotate
-        ? "rgba(255,255,255,0.14)"
-        : "rgba(255,255,255,0.08)";
-      button.style.transform = isHovered ? "translateY(-1px)" : "translateY(0)";
-      button.style.boxShadow = isHovered
-        ? `0 0 0 1px ${this.axisColorMap[axis]} inset, 0 8px 20px rgba(0,0,0,0.18)`
-        : "none";
-    }
-  }
-
- createMoveJoystick() {
-  let root = document.getElementById("moveJoystickRoot");
-
-  if (!root) {
-    root = document.createElement("div");
-    root.id = "moveJoystickRoot";
-    root.style.position = "fixed";
-    root.style.right = "16px";
-    root.style.left = "auto";
-    root.style.bottom = "16px";
-    root.style.zIndex = "26";
-    root.style.width = "108px";
-    root.style.height = "108px";
-    root.style.userSelect = "none";
-    root.style.webkitUserSelect = "none";
-    root.style.touchAction = "none";
-    root.style.pointerEvents = "auto";
-
-    const base = document.createElement("div");
-    base.id = "moveJoystickBase";
-    base.style.position = "absolute";
-    base.style.left = "0";
-    base.style.top = "0";
-    base.style.width = "100%";
-    base.style.height = "100%";
-    base.style.borderRadius = "999px";
-    base.style.background = "rgba(0,0,0,0.30)";
-    base.style.backdropFilter = "blur(8px)";
-    base.style.border = "1px solid rgba(255,255,255,0.12)";
-    base.style.boxShadow = "0 8px 24px rgba(0,0,0,0.18)";
-    base.style.overflow = "hidden";
-    base.style.touchAction = "none";
-
-    const ring = document.createElement("div");
-    ring.id = "moveJoystickRing";
-    ring.style.position = "absolute";
-    ring.style.borderRadius = "999px";
-    ring.style.border = "1px solid rgba(255,255,255,0.08)";
-    ring.style.background = "rgba(255,255,255,0.02)";
-    ring.style.pointerEvents = "none";
-    ring.style.boxSizing = "border-box";
-
-    const knob = document.createElement("div");
-    knob.id = "moveJoystickKnob";
-    knob.style.position = "absolute";
-    knob.style.borderRadius = "999px";
-    knob.style.background = "rgba(255,255,255,0.22)";
-    knob.style.border = "1px solid rgba(255,255,255,0.16)";
-    knob.style.boxShadow = "0 6px 18px rgba(0,0,0,0.16)";
-    knob.style.transition = "left 0.08s linear, top 0.08s linear, background 0.12s ease";
-    knob.style.pointerEvents = "none";
-    knob.style.boxSizing = "border-box";
-
-    const hint = document.createElement("div");
-    hint.id = "moveJoystickHint";
-    hint.textContent = "MOVE";
-    hint.style.position = "absolute";
-    hint.style.left = "50%";
-    hint.style.top = "-20px";
-    hint.style.transform = "translateX(-50%)";
-    hint.style.fontSize = "11px";
-    hint.style.fontWeight = "700";
-    hint.style.letterSpacing = "1px";
-    hint.style.color = "rgba(255,255,255,0.72)";
-    hint.style.pointerEvents = "none";
-
-    base.appendChild(ring);
-    base.appendChild(knob);
-    root.appendChild(base);
-    root.appendChild(hint);
-    document.body.appendChild(root);
-
-    base.addEventListener("pointerdown", this.onJoystickPointerDown, {
-      passive: false,
-    });
-
-    window.addEventListener("pointermove", this.onJoystickPointerMove, {
-      passive: false,
-    });
-
-    window.addEventListener("pointerup", this.onJoystickPointerUp, {
-      passive: false,
-    });
-
-    window.addEventListener("pointercancel", this.onJoystickPointerUp, {
-      passive: false,
-    });
-
-    this.joystickBase = base;
-    this.joystickKnob = knob;
-  } else {
-    this.joystickBase = root.querySelector("#moveJoystickBase");
-    this.joystickKnob = root.querySelector("#moveJoystickKnob");
-  }
-
-  this.joystickRoot = root;
-  this.updateJoystickLayout();
-  this.updateJoystickUI();
-  this.resetJoystickVisual();
-}
-updateJoystickLayout() {
-  if (!this.joystickRoot || !this.joystickBase) return;
-
-  const metrics = this.getResponsiveUiMetrics();
-  const isCompact = metrics.isMobile;
-  const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
-
-  const size = isLandscapeCompact ? 76 : isCompact ? 92 : 108;
-  const knobSize = isLandscapeCompact ? 34 : isCompact ? 44 : 52;
-  const ringSize = isLandscapeCompact ? 54 : isCompact ? 68 : 72;
-
-  this.joystickSize = size;
-  this.joystickKnobSize = knobSize;
-  this.joystickRingSize = ringSize;
-
-  this.joystickRoot.style.right = isLandscapeCompact ? "10px" : "16px";
-  this.joystickRoot.style.left = "auto";
-  this.joystickRoot.style.bottom = isLandscapeCompact ? "12px" : isCompact ? "84px" : "96px";
-  this.joystickRoot.style.width = `${size}px`;
-  this.joystickRoot.style.height = `${size}px`;
-
-  const ring = this.joystickBase.querySelector("#moveJoystickRing");
-  if (ring) {
-    const ringLeft = (size - ringSize) * 0.5;
-    const ringTop = (size - ringSize) * 0.5;
-    ring.style.width = `${ringSize}px`;
-    ring.style.height = `${ringSize}px`;
-    ring.style.left = `${ringLeft}px`;
-    ring.style.top = `${ringTop}px`;
-  }
-
-  const hint = this.joystickRoot.querySelector("#moveJoystickHint");
-  if (hint) {
-    hint.style.top = isLandscapeCompact ? "-16px" : "-20px";
-    hint.style.fontSize = isLandscapeCompact ? "9px" : isCompact ? "10px" : "11px";
-  }
-
-  if (this.joystickKnob) {
-    this.joystickKnob.style.width = `${knobSize}px`;
-    this.joystickKnob.style.height = `${knobSize}px`;
-  }
-
-  this.joystickMaxRadius = isLandscapeCompact ? 22 : isCompact ? 27 : 34;
-
-  this.resetJoystickVisual();
-}
-
-  canUseJoystick() {
-    if (!this.blockSystem) return false;
-    if (this.isGameOver || this.isRestarting) return false;
-    if (!this.blockSystem.getCurrentPreviewBlock()) return false;
-
-    return (
-      this.blockSystem.state === "EDIT" ||
-      this.blockSystem.state === "ROTATE"
-    );
-  }
-
-  updateJoystickUI() {
-    if (!this.joystickRoot || !this.joystickBase) return;
-
-    const enabled = this.canUseJoystick();
-
-    this.joystickRoot.style.opacity = enabled ? "1" : "0.45";
-    this.joystickRoot.style.pointerEvents = enabled ? "auto" : "none";
-    this.joystickBase.style.background = enabled
-      ? "rgba(0,0,0,0.30)"
-      : "rgba(0,0,0,0.18)";
-
-    if (!enabled) {
-      this.releaseJoystick();
-    }
-  }
-
-resetJoystickVisual() {
-  if (!this.joystickKnob) return;
-
-  const knobSize = this.joystickKnobSize ?? 52;
-  const baseSize = this.joystickSize ?? 108;
-
-  const left = (baseSize - knobSize) * 0.5;
-  const top = (baseSize - knobSize) * 0.5;
-
-  this.joystickKnob.style.left = `${left}px`;
-  this.joystickKnob.style.top = `${top}px`;
-  this.joystickKnob.style.background = this.joystickActive
-    ? "rgba(255,255,255,0.30)"
-    : "rgba(255,255,255,0.22)";
-}
-
-  releaseJoystick() {
-    this.joystickPointerId = null;
-    this.joystickActive = false;
-    this.joystickInput.set(0, 0);
-    this.resetJoystickVisual();
-  }
-
-updateJoystickFromEvent(event) {
-  if (!this.joystickBase || !this.joystickKnob) return;
-
-  const rect = this.joystickBase.getBoundingClientRect();
-  const centerX = rect.left + rect.width * 0.5;
-  const centerY = rect.top + rect.height * 0.5;
-
-  let dx = event.clientX - centerX;
-  let dy = event.clientY - centerY;
-
-  const distance = Math.hypot(dx, dy);
-  const maxRadius = this.joystickMaxRadius;
-
-  if (distance > maxRadius && distance > 0.0001) {
-    const scale = maxRadius / distance;
-    dx *= scale;
-    dy *= scale;
-  }
-
-  const knobSize = this.joystickKnobSize ?? 52;
-  const baseSize = this.joystickSize ?? rect.width;
-
-  const left = (baseSize - knobSize) * 0.5 + dx;
-  const top = (baseSize - knobSize) * 0.5 + dy;
-
-  this.joystickKnob.style.left = `${left}px`;
-  this.joystickKnob.style.top = `${top}px`;
-  this.joystickKnob.style.background = "rgba(255,255,255,0.30)";
-
-  this.joystickInput.set(dx / maxRadius, -dy / maxRadius);
-}
-
-  onJoystickPointerDown(event) {
-    if (!this.canUseJoystick()) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    this.joystickPointerId = event.pointerId;
-    this.joystickActive = true;
-
-    if (this.joystickBase?.setPointerCapture) {
-      try {
-        this.joystickBase.setPointerCapture(event.pointerId);
-      } catch (_) {}
-    }
-
-    this.updateJoystickFromEvent(event);
-  }
-
-  onJoystickPointerMove(event) {
-    if (!this.joystickActive) return;
-    if (this.joystickPointerId !== event.pointerId) return;
-
-    event.preventDefault();
-    this.updateJoystickFromEvent(event);
-  }
-
-  onJoystickPointerUp(event) {
-    if (!this.joystickActive) return;
-    if (this.joystickPointerId !== event.pointerId) return;
-
-    event.preventDefault();
-
-    if (this.joystickBase?.releasePointerCapture) {
-      try {
-        this.joystickBase.releasePointerCapture(event.pointerId);
-      } catch (_) {}
-    }
-
-    this.releaseJoystick();
-  }
-
-  applyJoystickMovement(dt) {
-    if (!this.canUseJoystick()) return;
-    if (!this.joystickActive) return;
-
-    const block = this.blockSystem.getCurrentPreviewBlock();
-    if (!block?.mesh) return;
-
-    const inputLength = Math.min(1, this.joystickInput.length());
-    if (inputLength <= 0.001) return;
-
-    this.renderer.camera.getWorldDirection(this.joystickForward);
-    this.joystickForward.y = 0;
-
-    if (this.joystickForward.lengthSq() < 1e-6) {
-      this.joystickForward.set(0, 0, -1);
+      document.body.appendChild(panel);
     } else {
-      this.joystickForward.normalize();
+      this.moveButtons.up = panel.querySelector('[data-dir="up"]');
+      this.moveButtons.left = panel.querySelector('[data-dir="left"]');
+      this.moveButtons.down = panel.querySelector('[data-dir="down"]');
+      this.moveButtons.right = panel.querySelector('[data-dir="right"]');
     }
 
-    this.joystickRight.crossVectors(this.joystickForward, this.worldUp);
-
-    if (this.joystickRight.lengthSq() < 1e-6) {
-      this.joystickRight.set(1, 0, 0);
-    } else {
-      this.joystickRight.normalize();
-    }
-
-    this.joystickMove
-      .copy(this.joystickRight)
-      .multiplyScalar(this.joystickInput.x)
-      .addScaledVector(this.joystickForward, this.joystickInput.y);
-
-    if (this.joystickMove.lengthSq() < 1e-6) return;
-
-    this.joystickMove.normalize();
-
-    const speed = this.joystickMoveSpeed * inputLength;
-    const moveDistance = speed * dt;
-
-    const nextX = block.mesh.position.x + this.joystickMove.x * moveDistance;
-    const nextZ = block.mesh.position.z + this.joystickMove.z * moveDistance;
-
-    this.blockSystem.setPreviewPosition(nextX, nextZ);
+    this.movePadPanel = panel;
+    this.updateMovePadLayout();
+    this.updateMovePadUI();
   }
 
-  updateActionButtonLayout() {
-    if (!this.actionButton) return;
+  updateMovePadLayout() {
+    if (!this.movePadPanel) return;
 
     const metrics = this.getResponsiveUiMetrics();
     const isCompact = metrics.isMobile;
     const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
 
-    const width = isLandscapeCompact ? 86 : isCompact ? 94 : 112;
-    const height = isLandscapeCompact ? 38 : isCompact ? 42 : 48;
-    const bottom = isLandscapeCompact ? 12 : isCompact ? 18 : 22;
+    const size = isLandscapeCompact ? 120 : isCompact ? 148 : 174;
+    const cell = isLandscapeCompact ? 32 : isCompact ? 40 : 48;
 
-    this.actionButton.style.position = "fixed";
-    this.actionButton.style.left = "50%";
-    this.actionButton.style.right = "auto";
-    this.actionButton.style.transform = "translateX(-50%)";
-    this.actionButton.style.bottom = `${bottom}px`;
-    this.actionButton.style.minWidth = `${width}px`;
-    this.actionButton.style.width = `${width}px`;
-    this.actionButton.style.maxWidth = `${width}px`;
-    this.actionButton.style.height = `${height}px`;
-    this.actionButton.style.padding = isLandscapeCompact ? "0 8px" : isCompact ? "0 10px" : "0 16px";
-    this.actionButton.style.fontSize = isLandscapeCompact ? "13px" : isCompact ? "14px" : "16px";
-    this.actionButton.style.borderRadius = isLandscapeCompact ? "11px" : isCompact ? "12px" : "14px";
-    this.actionButton.style.whiteSpace = "nowrap";
-    this.actionButton.style.zIndex = "28";
-    this.actionButton.style.boxSizing = "border-box";
-  }
+    this.movePadPanel.style.left = isLandscapeCompact ? "66px" : isCompact ? "86px" : "98px";
+    this.movePadPanel.style.bottom = isLandscapeCompact ? "12px" : isCompact ? "18px" : "22px";
+    this.movePadPanel.style.width = `${size}px`;
+    this.movePadPanel.style.height = `${size}px`;
 
-  formatModelName(name = "") {
-    return String(name || "")
-      .replace(/\.[^/.]+$/, "")
-      .replace(/[_-]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  async updateNextPreviewUI() {
-    if (!this.blockSystem) return;
-
-    const nextInfo = await this.blockSystem.getNextBlockInfo();
-    if (!nextInfo) return;
-
-    const key = String(nextInfo.path ?? nextInfo.key ?? nextInfo.file ?? nextInfo.name ?? "");
-    if (this.nextPreviewKey === key) return;
-
-    this.nextPreviewKey = key;
-
-    if (this.nextNameLabel) {
-      this.nextNameLabel.textContent = this.formatModelName(
-        nextInfo.file ?? nextInfo.name ?? nextInfo.path ?? nextInfo.key ?? "-"
-      );
+    for (const btn of Object.values(this.moveButtons)) {
+      if (!btn) continue;
+      btn.style.width = `${cell}px`;
+      btn.style.height = `${cell}px`;
+      btn.style.fontSize = isLandscapeCompact ? "14px" : isCompact ? "16px" : "18px";
+      btn.style.justifySelf = "center";
+      btn.style.alignSelf = "center";
     }
-
-    if (this.nextPreviewMesh) {
-      this.nextPreviewScene.remove(this.nextPreviewMesh);
-      this.nextPreviewMesh = null;
-    }
-
-    if (!this.blockSystem.factory?.createUiPreviewObject) return;
-
-    const previewGroup = await this.blockSystem.factory.createUiPreviewObject(nextInfo);
-    if (!previewGroup) return;
-
-    const box = new THREE.Box3().setFromObject(previewGroup);
-    const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
-    box.getSize(size);
-    box.getCenter(center);
-
-    previewGroup.position.sub(center);
-
-    const maxAxis = Math.max(size.x, size.y, size.z) || 1;
-    const fitScale = 1.9 / maxAxis;
-    previewGroup.scale.multiplyScalar(fitScale);
-    previewGroup.position.y = -0.08;
-
-    this.nextPreviewScene.add(previewGroup);
-    this.nextPreviewMesh = previewGroup;
-    this.renderNextPreview();
-  }
-
-  renderNextPreview() {
-    if (!this.nextPreviewRenderer || !this.nextPreviewScene || !this.nextPreviewCamera) return;
-
-    if (this.nextPreviewMesh) {
-      this.nextPreviewMesh.rotation.y += 0.01;
-      this.nextPreviewMesh.rotation.x = Math.sin(performance.now() * 0.0012) * 0.08;
-    }
-
-    this.nextPreviewRenderer.render(this.nextPreviewScene, this.nextPreviewCamera);
-  }
-
-  getRotatedPreviewQuaternion(axis, turns = 1) {
-    const block = this.blockSystem?.getCurrentPreviewBlock();
-    if (!block) return null;
-
-    const currentQuat = block.mesh.quaternion.clone();
-    const axisVector = this.axisVectorMap[axis]?.clone();
-    if (!axisVector) return null;
-
-    axisVector.applyQuaternion(currentQuat).normalize();
-
-    const deltaQuat = new THREE.Quaternion().setFromAxisAngle(
-      axisVector,
-      (Math.PI / 2) * turns
-    );
-
-    return deltaQuat.multiply(currentQuat).normalize();
-  }
-
-  createRotationGhostFromBlock(block) {
-    if (!block?.mesh) return null;
-
-    const ghost = block.mesh.clone(true);
-
-    ghost.traverse((child) => {
-      if (!child.isMesh) return;
-
-      if (child.material) {
-        const material = child.material.clone();
-        material.transparent = true;
-        material.opacity = 0.28;
-        material.depthWrite = false;
-
-        if ("emissive" in material && material.emissive instanceof THREE.Color) {
-          material.emissive = material.emissive.clone();
-          material.emissiveIntensity = 0.45;
-        }
-
-        child.material = material;
-      }
-
-      child.renderOrder = 998;
-      child.raycast = () => {};
-    });
-
-    return ghost;
-  }
-
-  clearRotationGhost() {
-    if (!this.rotationGhost) {
-      this.rotationGhostAxis = null;
-      return;
-    }
-
-    if (this.rotationGhost.parent) {
-      this.rotationGhost.parent.remove(this.rotationGhost);
-    }
-
-    this.rotationGhost.traverse((child) => {
-      if (!child.isMesh) return;
-      if (child.material?.dispose) child.material.dispose();
-    });
-
-    this.rotationGhost = null;
-    this.rotationGhostAxis = null;
-  }
-
-  updateRotationGhost() {
-    const axis = this.hoverRotateAxis;
-    const block = this.blockSystem?.getCurrentPreviewBlock();
-
-    if (!axis || !block?.mesh) {
-      this.clearRotationGhost();
-      return;
-    }
-
-    if (!this.rotationGhost) {
-      this.rotationGhost = this.createRotationGhostFromBlock(block);
-      if (this.rotationGhost) {
-        this.renderer.scene.add(this.rotationGhost);
-      }
-    }
-
-    if (!this.rotationGhost) return;
-
-    this.rotationGhost.position.copy(block.mesh.position);
-
-    const q = this.getRotatedPreviewQuaternion(axis, 1);
-    if (q) {
-      this.rotationGhost.quaternion.copy(q);
-      this.rotationGhostAxis = axis;
-    }
-
-    this.rotationGhost.scale.copy(block.mesh.scale);
-
-    const accent = this.axisColorMap[axis] ?? "#ffffff";
-    this.rotationGhost.traverse((child) => {
-      if (!child.isMesh || !child.material) return;
-      if (child.material.emissive instanceof THREE.Color) {
-        child.material.emissive.set(accent);
-      }
-    });
-  }
-
-  updateRotateAxisHoverGizmo() {
-    const placement = this.placementController;
-    const previewBlock = this.blockSystem?.getCurrentPreviewBlock();
-
-    if (!placement || !previewBlock) return;
-
-    if (placement.selectionMode === "ROTATE") {
-      placement.rotateGizmo.syncToBlock(previewBlock);
-    }
-  }
-
-  updateRotationButtonHints() {
-    this.updateRotationGhost();
-    this.updateRotateAxisHoverGizmo();
-  }
-
-  onRotateStepButtonClick(event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const axis = event.currentTarget?.dataset?.axis;
-    if (!axis || !this.blockSystem) return;
-    if (this.isGameOver || this.isRestarting) return;
-
-    const rotated = this.blockSystem.rotatePreview90(axis);
-    if (!rotated) return;
-
-    const previewBlock = this.blockSystem.getCurrentPreviewBlock();
-
-    if (this.placementController?.selectionMode === "ROTATE" && previewBlock) {
-      this.placementController.rotateGizmo.syncToBlock(previewBlock);
-    }
-
-    this.updateRotationGhost();
-    this.updateRotateButtonsUI();
-  }
-
-  setLoadingProgress(progress = 0, text = "") {
-    const safeProgress = Math.max(0, Math.min(1, progress));
-
-    if (this.loadingProgressFill) {
-      this.loadingProgressFill.style.width = `${(safeProgress * 100).toFixed(0)}%`;
-    }
-
-    if (this.loadingStatusLabel && text) {
-      this.loadingStatusLabel.textContent = text;
-    }
-  }
-
-  startLoadingRenderLoop() {
-    if (this.isLoading) return;
-    this.isLoading = true;
-    this.loadingLoop();
-  }
-
-  stopLoadingRenderLoop() {
-    this.isLoading = false;
-
-    if (this.loadingRafId !== null) {
-      cancelAnimationFrame(this.loadingRafId);
-      this.loadingRafId = null;
-    }
-  }
-
-  loadingLoop() {
-    if (!this.isLoading) return;
-
-    if (this.renderer?.update) {
-      this.renderer.update();
-    }
-
-    if (this.renderer?.render) {
-      this.renderer.render();
-    }
-
-    this.renderNextPreview();
-    this.loadingRafId = requestAnimationFrame(this.loadingLoop);
-  }
-
-  async waitForNextFrame() {
-    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-  }
-
-  async waitForFirstVisibleFrame() {
-    if (this.blockSystem) {
-      this.blockSystem.update();
-    }
-
-    if (this.placementController) {
-      this.placementController.update();
-    }
-
-    this.updateRotationButtonHints();
-
-    if (this.renderer?.update) {
-      this.renderer.update();
-    }
-
-    if (this.renderer?.render) {
-      this.renderer.render();
-    }
-
-    this.renderNextPreview();
-    await this.waitForNextFrame();
-
-    if (this.blockSystem) {
-      this.blockSystem.update();
-    }
-
-    if (this.placementController) {
-      this.placementController.update();
-    }
-
-    this.updateRotationButtonHints();
-
-    if (this.renderer?.update) {
-      this.renderer.update();
-    }
-
-    if (this.renderer?.render) {
-      this.renderer.render();
-    }
-
-    this.renderNextPreview();
-    await this.waitForNextFrame();
-  }
-
-  async hideLoadingScreen() {
-    if (!this.loadingOverlay) return;
-
-    this.loadingOverlay.style.opacity = "0";
-    this.loadingOverlay.style.pointerEvents = "none";
-
-    await new Promise((resolve) => setTimeout(resolve, 360));
-
-    if (this.loadingOverlay?.parentNode) {
-      this.loadingOverlay.parentNode.removeChild(this.loadingOverlay);
-    }
-
-    this.loadingOverlay = null;
-    this.loadingStatusLabel = null;
-    this.loadingProgressBar = null;
-    this.loadingProgressFill = null;
-  }
-
-  startMainLoop() {
-    if (this.isAnimating) return;
-    this.isAnimating = true;
-    requestAnimationFrame(this.animate);
   }
 
   createSettingsButton() {
@@ -1525,31 +855,19 @@ updateJoystickFromEvent(event) {
       button.type = "button";
       button.innerHTML = "⚙";
       button.style.position = "fixed";
-      button.style.top = "16px";
-      button.style.right = "18px";
       button.style.zIndex = "30";
-      button.style.width = "46px";
-      button.style.height = "46px";
       button.style.border = "0";
-      button.style.borderRadius = "14px";
       button.style.background = "rgba(0,0,0,0.55)";
       button.style.color = "#fff";
-      button.style.fontSize = "24px";
-      button.style.fontWeight = "700";
       button.style.cursor = "pointer";
       button.style.backdropFilter = "blur(6px)";
       button.style.boxShadow = "0 6px 18px rgba(0,0,0,0.18)";
-      button.style.userSelect = "none";
-      button.style.webkitUserSelect = "none";
       document.body.appendChild(button);
     }
 
     button.addEventListener("click", () => {
-      if (this.isSettingsOpen) {
-        this.closeSettingsModal();
-      } else {
-        this.openSettingsModal();
-      }
+      if (this.isSettingsOpen) this.closeSettingsModal();
+      else this.openSettingsModal();
     });
 
     this.settingsButton = button;
@@ -1572,18 +890,13 @@ updateJoystickFromEvent(event) {
       backdrop.style.justifyContent = "center";
 
       backdrop.addEventListener("click", (event) => {
-        if (event.target === backdrop) {
-          this.closeSettingsModal();
-        }
+        if (event.target === backdrop) this.closeSettingsModal();
       });
 
       modal = document.createElement("div");
       modal.id = "settingsModal";
-      modal.style.width = "min(520px, 92vw)";
-      modal.style.maxHeight = "78vh";
       modal.style.display = "flex";
       modal.style.flexDirection = "column";
-      modal.style.borderRadius = "18px";
       modal.style.background = "rgba(16,20,28,0.94)";
       modal.style.border = "1px solid rgba(255,255,255,0.10)";
       modal.style.boxShadow = "0 18px 46px rgba(0,0,0,0.30)";
@@ -1787,7 +1100,6 @@ updateJoystickFromEvent(event) {
 
       nameWrap.appendChild(name);
       nameWrap.appendChild(meta);
-
       row.appendChild(rank);
       row.appendChild(nameWrap);
       row.appendChild(score);
@@ -1826,10 +1138,6 @@ updateJoystickFromEvent(event) {
     }
   }
 
-  updateBgmButtonUI() {
-    this.updateSettingsBgmUI();
-  }
-
   setupBgmUnlock() {
     window.addEventListener("pointerdown", this.unlockBgm, { passive: true });
     window.addEventListener("touchstart", this.unlockBgm, { passive: true });
@@ -1844,10 +1152,8 @@ updateJoystickFromEvent(event) {
 
   async unlockBgm() {
     if (this.bgmUnlocked) return;
-
     this.bgmUnlocked = true;
     this.removeBgmUnlockListeners();
-
     if (this.bgmEnabled) {
       await this.playBgm();
     }
@@ -1855,7 +1161,6 @@ updateJoystickFromEvent(event) {
 
   async playBgm() {
     if (!this.bgm || !this.bgmEnabled) return;
-
     try {
       await this.bgm.play();
     } catch (error) {
@@ -1870,15 +1175,76 @@ updateJoystickFromEvent(event) {
 
   async onBgmToggleClick() {
     this.bgmEnabled = !this.bgmEnabled;
-    this.updateBgmButtonUI();
+    this.updateSettingsBgmUI();
 
     if (this.bgmEnabled) {
-      if (this.bgmUnlocked) {
-        await this.playBgm();
-      }
+      if (this.bgmUnlocked) await this.playBgm();
     } else {
       this.pauseBgm();
     }
+  }
+
+  formatModelName(name = "") {
+    return String(name || "")
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  async updateNextPreviewUI() {
+    if (!this.blockSystem) return;
+
+    const nextInfo = await this.blockSystem.getNextBlockInfo();
+    if (!nextInfo) return;
+
+    const key = String(nextInfo.path ?? nextInfo.key ?? nextInfo.file ?? nextInfo.name ?? "");
+    if (this.nextPreviewKey === key) return;
+
+    this.nextPreviewKey = key;
+
+    if (this.nextNameLabel) {
+      this.nextNameLabel.textContent = this.formatModelName(
+        nextInfo.file ?? nextInfo.name ?? nextInfo.path ?? nextInfo.key ?? "-"
+      );
+    }
+
+    if (this.nextPreviewMesh) {
+      this.nextPreviewScene.remove(this.nextPreviewMesh);
+      this.nextPreviewMesh = null;
+    }
+
+    if (!this.blockSystem.factory?.createUiPreviewObject) return;
+
+    const previewGroup = await this.blockSystem.factory.createUiPreviewObject(nextInfo);
+    if (!previewGroup) return;
+
+    const box = new THREE.Box3().setFromObject(previewGroup);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    previewGroup.position.sub(center);
+
+    const maxAxis = Math.max(size.x, size.y, size.z) || 1;
+    const fitScale = 1.9 / maxAxis;
+    previewGroup.scale.multiplyScalar(fitScale);
+
+    this.nextPreviewScene.add(previewGroup);
+    this.nextPreviewMesh = previewGroup;
+    this.renderNextPreview();
+  }
+
+  renderNextPreview() {
+    if (!this.nextPreviewRenderer || !this.nextPreviewScene || !this.nextPreviewCamera) return;
+
+    if (this.nextPreviewMesh) {
+      this.nextPreviewMesh.rotation.y += 0.01;
+      this.nextPreviewMesh.rotation.x = Math.sin(performance.now() * 0.0012) * 0.08;
+    }
+
+    this.nextPreviewRenderer.render(this.nextPreviewScene, this.nextPreviewCamera);
   }
 
   updateNicknameUI() {
@@ -1895,10 +1261,8 @@ updateJoystickFromEvent(event) {
 
   updateBestHeightUI() {
     if (!this.bestHeightLabel) return;
-
     const roundPeak = this.blockSystem?.getPeakStableHeight?.() ?? 0;
     const displayBest = Math.max(this.bestHeight, roundPeak);
-
     this.bestHeightLabel.textContent = `최고 기록: ${displayBest.toFixed(2)}`;
   }
 
@@ -1916,8 +1280,6 @@ updateJoystickFromEvent(event) {
 
     const blocksUsed = this.blockSystem.getCommittedBlockCount
       ? this.blockSystem.getCommittedBlockCount()
-      : this.blockSystem.getBlockCount
-      ? this.blockSystem.getBlockCount()
       : 0;
 
     const result = await this.rankingService.submitScore({
@@ -1934,6 +1296,13 @@ updateJoystickFromEvent(event) {
   updateControlButton() {
     if (!this.actionButton || !this.blockSystem) return;
 
+    if (!this.isSessionStarted) {
+      this.actionButton.disabled = true;
+      this.actionButton.textContent = "시작 대기";
+      this.actionButton.style.opacity = "0.5";
+      return;
+    }
+
     if (this.isGameOver || this.isRestarting) {
       this.actionButton.disabled = true;
       this.actionButton.textContent = "대기중";
@@ -1941,16 +1310,16 @@ updateJoystickFromEvent(event) {
       return;
     }
 
-    const state = this.blockSystem.state;
+    const hasPreview = !!this.blockSystem.getCurrentPreviewBlock();
 
-    if (state === "EDIT" || state === "ROTATE") {
+    if (hasPreview && this.blockSystem.state === "EDIT") {
       this.actionButton.disabled = false;
-      this.actionButton.textContent = "배치";
+      this.actionButton.textContent = "빠른 낙하";
       this.actionButton.style.opacity = "1";
       return;
     }
 
-    if (state === "WAITING") {
+    if (this.blockSystem.state === "WAITING") {
       this.actionButton.disabled = true;
       this.actionButton.textContent = "착지중";
       this.actionButton.style.opacity = "0.5";
@@ -1962,18 +1331,230 @@ updateJoystickFromEvent(event) {
     this.actionButton.style.opacity = "0.5";
   }
 
+  updateRotateButtonsUI() {
+    const canRotate =
+      !!this.blockSystem &&
+      !!this.blockSystem.getCurrentPreviewBlock() &&
+      this.blockSystem.state === "EDIT" &&
+      !this.isGameOver &&
+      !this.isRestarting &&
+      this.isSessionStarted;
+
+    if (this.rotateButtonsPanel) {
+      this.rotateButtonsPanel.style.opacity = canRotate ? "1" : "0.55";
+    }
+
+    for (const button of Object.values(this.rotateButtons)) {
+      if (!button) continue;
+      button.disabled = !canRotate;
+      button.style.cursor = canRotate ? "pointer" : "default";
+      button.style.opacity = canRotate ? "1" : "0.5";
+    }
+  }
+
+  updateMovePadUI() {
+    const canMove =
+      !!this.blockSystem &&
+      !!this.blockSystem.getCurrentPreviewBlock() &&
+      this.blockSystem.state === "EDIT" &&
+      !this.isGameOver &&
+      !this.isRestarting &&
+      this.isSessionStarted;
+
+    if (this.movePadPanel) {
+      this.movePadPanel.style.opacity = canMove ? "1" : "0.55";
+      this.movePadPanel.style.pointerEvents = canMove ? "auto" : "none";
+    }
+
+    for (const button of Object.values(this.moveButtons)) {
+      if (!button) continue;
+      button.disabled = !canMove;
+      button.style.opacity = canMove ? "1" : "0.5";
+      button.style.cursor = canMove ? "pointer" : "default";
+    }
+  }
+
+  updateActionButtonLayout() {
+    if (!this.actionButton) return;
+
+    const metrics = this.getResponsiveUiMetrics();
+    const isCompact = metrics.isMobile;
+    const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
+
+    const width = isLandscapeCompact ? 110 : isCompact ? 124 : 144;
+    const height = isLandscapeCompact ? 38 : isCompact ? 44 : 50;
+    const bottom = isLandscapeCompact ? 12 : isCompact ? 18 : 22;
+
+    this.actionButton.style.position = "fixed";
+    this.actionButton.style.left = "50%";
+    this.actionButton.style.transform = "translateX(-50%)";
+    this.actionButton.style.bottom = `${bottom}px`;
+    this.actionButton.style.width = `${width}px`;
+    this.actionButton.style.height = `${height}px`;
+    this.actionButton.style.fontSize = isLandscapeCompact ? "13px" : isCompact ? "14px" : "16px";
+    this.actionButton.style.borderRadius = isLandscapeCompact ? "11px" : isCompact ? "12px" : "14px";
+    this.actionButton.style.zIndex = "28";
+  }
+
   async onActionButtonClick() {
     if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
+    if (!this.isSessionStarted) return;
 
-    if (this.blockSystem.state === "EDIT" || this.blockSystem.state === "ROTATE") {
-      this.blockSystem.confirmCurrentBlock();
-      this.clearRotationGhost();
+    const dropped = this.blockSystem.dropCurrentBlockFast();
+    if (dropped) {
       await this.updateNextPreviewUI();
     }
 
     this.updateControlButton();
     this.updateRotateButtonsUI();
-    this.updateJoystickUI();
+    this.updateMovePadUI();
+  }
+
+  onRotateStepButtonClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const axis = event.currentTarget?.dataset?.axis;
+    if (!axis || !this.blockSystem) return;
+    if (!this.isSessionStarted || this.isGameOver || this.isRestarting) return;
+
+    const rotated = this.blockSystem.rotatePreview90(axis);
+    if (!rotated) return;
+  }
+
+  getCameraPlanarDirections() {
+    const forward = new THREE.Vector3();
+    this.renderer.camera.getWorldDirection(forward);
+    forward.y = 0;
+
+    if (forward.lengthSq() < 1e-6) {
+      forward.set(0, 0, -1);
+    } else {
+      forward.normalize();
+    }
+
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
+    if (right.lengthSq() < 1e-6) {
+      right.set(1, 0, 0);
+    } else {
+      right.normalize();
+    }
+
+    const step = this.blockSystem?.getGridStep?.() ?? 1;
+
+    const snapAxis = (vec) => {
+      if (Math.abs(vec.x) >= Math.abs(vec.z)) {
+        return new THREE.Vector3(Math.sign(vec.x || 1), 0, 0).multiplyScalar(step);
+      }
+      return new THREE.Vector3(0, 0, Math.sign(vec.z || 1)).multiplyScalar(step);
+    };
+
+    return {
+      forward: snapAxis(forward),
+      right: snapAxis(right),
+    };
+  }
+
+  movePreviewByDirection(dir) {
+    if (!this.blockSystem || !this.isSessionStarted) return false;
+    if (this.isGameOver || this.isRestarting) return false;
+    if (!this.blockSystem.getCurrentPreviewBlock()) return false;
+    if (this.blockSystem.state !== "EDIT") return false;
+
+    const { forward, right } = this.getCameraPlanarDirections();
+
+    let dx = 0;
+    let dz = 0;
+
+    if (dir === "up") {
+      dx = forward.x;
+      dz = forward.z;
+    } else if (dir === "down") {
+      dx = -forward.x;
+      dz = -forward.z;
+    } else if (dir === "left") {
+      dx = -right.x;
+      dz = -right.z;
+    } else if (dir === "right") {
+      dx = right.x;
+      dz = right.z;
+    } else {
+      return false;
+    }
+
+    return this.blockSystem.movePreviewByGrid(dx, dz);
+  }
+
+  onMoveButtonClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const dir = event.currentTarget?.dataset?.dir;
+    if (!dir) return;
+    this.movePreviewByDirection(dir);
+  }
+
+  onKeyDown(event) {
+    if (event.repeat) return;
+    if (!this.blockSystem) return;
+
+    const key = event.key.toLowerCase();
+
+    if (!this.isSessionStarted) {
+      if (key === "enter" || key === " ") {
+        event.preventDefault();
+        this.onStartButtonClick();
+      }
+      return;
+    }
+
+    if (this.isGameOver || this.isRestarting) return;
+
+    if (key === "q") {
+      event.preventDefault();
+      this.blockSystem.rotatePreview90("x");
+      return;
+    }
+
+    if (key === "w") {
+      event.preventDefault();
+      this.blockSystem.rotatePreview90("y");
+      return;
+    }
+
+    if (key === "e") {
+      event.preventDefault();
+      this.blockSystem.rotatePreview90("z");
+      return;
+    }
+
+    if (key === "arrowup") {
+      event.preventDefault();
+      this.movePreviewByDirection("up");
+      return;
+    }
+
+    if (key === "arrowdown") {
+      event.preventDefault();
+      this.movePreviewByDirection("down");
+      return;
+    }
+
+    if (key === "arrowleft") {
+      event.preventDefault();
+      this.movePreviewByDirection("left");
+      return;
+    }
+
+    if (key === "arrowright") {
+      event.preventDefault();
+      this.movePreviewByDirection("right");
+      return;
+    }
+
+    if (key === " " || key === "enter") {
+      event.preventDefault();
+      this.onActionButtonClick();
+    }
   }
 
   onResize() {
@@ -1984,13 +1565,30 @@ updateJoystickFromEvent(event) {
     this.applyGlobalUiLayout();
   }
 
+  async onStartButtonClick() {
+    if (this.isSessionStarted) return;
+    if (!this.blockSystem) return;
+
+    this.isSessionStarted = true;
+    this.blockSystem.setGameStarted(true);
+    this.updateStartOverlayLayout();
+
+    await this.blockSystem.getNextBlockInfo();
+    await this.blockSystem.createBlock();
+    await this.updateNextPreviewUI();
+
+    this.updateControlButton();
+    this.updateRotateButtonsUI();
+    this.updateMovePadUI();
+  }
+
   async handleFail() {
     if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
 
     this.isGameOver = true;
     this.updateControlButton();
     this.updateRotateButtonsUI();
-    this.updateJoystickUI();
+    this.updateMovePadUI();
 
     setTimeout(async () => {
       try {
@@ -2004,7 +1602,7 @@ updateJoystickFromEvent(event) {
         this.updateBestHeightUI();
 
         let name = prompt(
-          `실패!\n현재 높이: ${currentHeight.toFixed(2)}\n최종 점수(최고 안정 높이): ${finalScore.toFixed(2)}\n최고 기록: ${this.bestHeight.toFixed(2)}\n닉네임 입력:`,
+          `실패!\n현재 높이: ${currentHeight.toFixed(2)}\n최종 점수: ${finalScore.toFixed(2)}\n최고 기록: ${this.bestHeight.toFixed(2)}\n닉네임 입력:`,
           this.nickname || "Player"
         );
 
@@ -2037,30 +1635,107 @@ updateJoystickFromEvent(event) {
     this.isRestarting = true;
 
     this.blockSystem.reset();
-    this.clearRotationGhost();
-    this.hoverRotateAxis = null;
+    this.blockSystem.setGameStarted(false);
+
     this.renderer.resetCamera();
     this.nextPreviewKey = "";
+
+    this.isSessionStarted = false;
+    this.isGameOver = false;
 
     this.updateNicknameUI();
     this.updateHeightUI();
     this.updateBestHeightUI();
     this.updateVersionUI();
-
-    this.isGameOver = false;
+    this.updateStartOverlayLayout();
 
     await this.blockSystem.getNextBlockInfo();
-    await this.blockSystem.createBlock();
     await this.updateNextPreviewUI();
-
-    this.releaseJoystick();
 
     this.isRestarting = false;
     this.updateControlButton();
     this.updateRotateButtonsUI();
-    this.updateJoystickUI();
+    this.updateMovePadUI();
 
     await this.refreshLeaderboardUI(true);
+  }
+
+  setLoadingProgress(progress = 0, text = "") {
+    const safeProgress = Math.max(0, Math.min(1, progress));
+
+    if (this.loadingProgressFill) {
+      this.loadingProgressFill.style.width = `${(safeProgress * 100).toFixed(0)}%`;
+    }
+
+    if (this.loadingStatusLabel && text) {
+      this.loadingStatusLabel.textContent = text;
+    }
+  }
+
+  startLoadingRenderLoop() {
+    if (this.isLoading) return;
+    this.isLoading = true;
+    this.loadingLoop();
+  }
+
+  stopLoadingRenderLoop() {
+    this.isLoading = false;
+    if (this.loadingRafId !== null) {
+      cancelAnimationFrame(this.loadingRafId);
+      this.loadingRafId = null;
+    }
+  }
+
+  loadingLoop() {
+    if (!this.isLoading) return;
+
+    if (this.renderer?.update) this.renderer.update();
+    if (this.renderer?.render) this.renderer.render();
+    this.renderNextPreview();
+
+    this.loadingRafId = requestAnimationFrame(this.loadingLoop);
+  }
+
+  async waitForNextFrame() {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  async waitForFirstVisibleFrame() {
+    if (this.blockSystem) this.blockSystem.update(0.016);
+    if (this.renderer?.update) this.renderer.update();
+    if (this.renderer?.render) this.renderer.render();
+    this.renderNextPreview();
+    await this.waitForNextFrame();
+
+    if (this.blockSystem) this.blockSystem.update(0.016);
+    if (this.renderer?.update) this.renderer.update();
+    if (this.renderer?.render) this.renderer.render();
+    this.renderNextPreview();
+    await this.waitForNextFrame();
+  }
+
+  async hideLoadingScreen() {
+    if (!this.loadingOverlay) return;
+
+    this.loadingOverlay.style.opacity = "0";
+    this.loadingOverlay.style.pointerEvents = "none";
+
+    await new Promise((resolve) => setTimeout(resolve, 360));
+
+    if (this.loadingOverlay?.parentNode) {
+      this.loadingOverlay.parentNode.removeChild(this.loadingOverlay);
+    }
+
+    this.loadingOverlay = null;
+    this.loadingStatusLabel = null;
+    this.loadingProgressBar = null;
+    this.loadingProgressFill = null;
+  }
+
+  startMainLoop() {
+    if (this.isAnimating) return;
+    this.isAnimating = true;
+    requestAnimationFrame(this.animate);
   }
 
   async start() {
@@ -2081,46 +1756,26 @@ updateJoystickFromEvent(event) {
         () => this.handleFail(),
         this.config
       );
+      this.blockSystem.setGameStarted(false);
 
-      this.setLoadingProgress(0.7, "다음 블럭 준비 중...");
+      this.setLoadingProgress(0.75, "다음 블럭 준비 중...");
       await this.blockSystem.getNextBlockInfo();
 
-      this.setLoadingProgress(0.8, "첫 블럭 생성 중...");
-      await this.blockSystem.createBlock();
-
-      this.setLoadingProgress(0.9, "조작 시스템 연결 중...");
-      this.placementController = new PlacementController({
-        scene: this.renderer.scene,
-        camera: this.renderer.camera,
-        domElement: this.renderer.renderer.domElement,
-        controls: this.renderer.controls,
-        blockSystem: this.blockSystem,
-        groundMesh: this.renderer.groundMesh,
-        blockSize: this.config.blockSize,
-        stageSize: this.config.stageSize,
-        previewClampPadding: this.config.previewClampPadding,
-        longPressDuration: 380,
-        moveThreshold: 10,
-        rotateSpeed: 0.012,
-      });
-
-      this.setLoadingProgress(0.96, "UI 정리 중...");
+      this.setLoadingProgress(0.9, "UI 정리 중...");
       this.updateNicknameUI();
       this.updateHeightUI();
       this.updateBestHeightUI();
       this.updateVersionUI();
-      this.updateBgmButtonUI();
+      this.updateSettingsBgmUI();
       this.updateRotateButtonsUI();
-      this.updateJoystickUI();
-      this.updateActionButtonLayout();
+      this.updateMovePadUI();
+      this.updateControlButton();
       await this.updateNextPreviewUI();
-
       await this.refreshLeaderboardUI(true);
 
       window.addEventListener("resize", this.onResize);
+      window.addEventListener("keydown", this.onKeyDown);
       this.actionButton?.addEventListener("click", this.onActionButtonClick);
-
-      this.updateControlButton();
 
       this.setLoadingProgress(1, "준비 완료");
 
@@ -2131,6 +1786,7 @@ updateJoystickFromEvent(event) {
 
       await this.waitForFirstVisibleFrame();
       await this.hideLoadingScreen();
+      this.updateStartOverlayLayout();
     } catch (error) {
       console.error("Game start failed:", error);
       this.stopLoadingRenderLoop();
@@ -2194,32 +1850,25 @@ updateJoystickFromEvent(event) {
 
     if (!this.isGameOver && !this.isRestarting && this.blockSystem) {
       this.physics.step();
-      this.blockSystem.update();
+      this.blockSystem.update(dt);
 
-      this.applyJoystickMovement?.(dt);
       this.triggerLandingEffects();
 
       const followHeight = this.blockSystem.getMaxHeight();
       this.renderer.updateCamera(followHeight);
 
       this.updateHeightUI();
-      this.updateControlButton?.();
-      this.updateRotateButtonsUI?.();
-      this.updateJoystickUI?.();
-      await this.updateNextPreviewUI?.();
+      this.updateControlButton();
+      this.updateRotateButtonsUI();
+      this.updateMovePadUI();
+      await this.updateNextPreviewUI();
     }
-
-    if (this.placementController) {
-      this.placementController.update();
-    }
-
-    this.updateRotationButtonHints?.();
 
     if (this.renderer.update) {
       this.renderer.update(dt);
     }
 
     this.renderer.render();
-    this.renderNextPreview?.();
+    this.renderNextPreview();
   }
 }

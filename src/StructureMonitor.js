@@ -1,27 +1,21 @@
 export class StructureMonitor {
   constructor(options = {}) {
     this.stageSize = options.stageSize ?? 5;
-    this.stageRadius = this.stageSize / 2;
+    this.stageHalf = this.stageSize / 2;
     this.failY = options.failY ?? -3;
 
-    // falling -> landing 접촉 감지
     this.contactVerticalThreshold = options.contactVerticalThreshold ?? 0.32;
     this.contactHorizontalThreshold = options.contactHorizontalThreshold ?? 0.26;
     this.contactFramesRequired = options.contactFramesRequired ?? 2;
 
-    // landing -> settled
     this.landingMinFrames = options.landingMinFrames ?? 4;
     this.landingStableFramesRequired = options.landingStableFramesRequired ?? 4;
     this.maxLandingYDelta = options.maxLandingYDelta ?? 0.02;
-
-    // landing 최대 지속 시간 (초)
     this.maxLandingTime = options.maxLandingTime ?? 5.0;
 
-    // 크게 흔들리면 다시 falling
     this.largeMoveLinearThreshold = options.largeMoveLinearThreshold ?? 0.9;
     this.largeMoveAngularThreshold = options.largeMoveAngularThreshold ?? 0.9;
 
-    // 제자리 떨림 강제 종료
     this.jitterLinearMin = options.jitterLinearMin ?? 0.02;
     this.jitterLinearMax = options.jitterLinearMax ?? 0.22;
     this.jitterAngularMin = options.jitterAngularMin ?? 0.02;
@@ -124,7 +118,6 @@ export class StructureMonitor {
       if (block.state === "landing") {
         block.landingFrames = (block.landingFrames ?? 0) + 1;
 
-        // 착지 중 감쇠
         block.body.setLinvel(
           {
             x: lv.x * 0.82,
@@ -158,7 +151,6 @@ export class StructureMonitor {
           }
         }
 
-        // 제자리 떨림 감지
         const prev = block.prevPosForJitter ?? { x: pos.x, y: pos.y, z: pos.z };
         const posDelta = Math.hypot(pos.x - prev.x, pos.z - prev.z);
         const yPosDelta = Math.abs(pos.y - prev.y);
@@ -183,8 +175,7 @@ export class StructureMonitor {
           continue;
         }
 
-        const landingElapsedSec =
-          (now - (block.landingStartTime ?? now)) / 1000;
+        const landingElapsedSec = (now - (block.landingStartTime ?? now)) / 1000;
 
         if (block.stableFrames >= this.landingStableFramesRequired) {
           this.forceSettle(block);
@@ -268,13 +259,17 @@ export class StructureMonitor {
   }
 
   checkFail(blocks) {
+    const margin = 1.0;
+
     for (const block of blocks) {
       if (block.state === "preview") continue;
 
       const pos = block.body.translation();
-      const radialDistance = Math.hypot(pos.x, pos.z);
 
-      const outOfStage = radialDistance > this.stageRadius + 1;
+      const outOfStage =
+        Math.abs(pos.x) > this.stageHalf + margin ||
+        Math.abs(pos.z) > this.stageHalf + margin;
+
       const belowStage = pos.y < this.failY;
 
       if (outOfStage || belowStage) {

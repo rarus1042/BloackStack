@@ -7,9 +7,8 @@ export class Physics {
     this.groundBody = null;
     this.groundCollider = null;
 
-    this.stageSize = options.stageSize ?? 5;
-    this.stageRadius = this.stageSize / 2;
-    this.groundHeight = options.groundHeight ?? 0.5;
+    this.stageSize = options.stageSize ?? 6;
+    this.groundHeight = options.groundHeight ?? 0.12;
   }
 
   async init() {
@@ -31,19 +30,18 @@ export class Physics {
 
   setupGround() {
     const halfGroundHeight = this.groundHeight / 2;
+    const halfExtent = this.stageSize / 2;
 
     this.groundBody = this.world.createRigidBody(
       this.RAPIER.RigidBodyDesc.fixed().setTranslation(0, -halfGroundHeight, 0)
     );
-
-    const halfExtent = this.stageRadius * 0.98;
 
     const colDesc = this.RAPIER.ColliderDesc.cuboid(
       halfExtent,
       halfGroundHeight,
       halfExtent
     )
-      .setFriction(2.2)
+      .setFriction(2.25)
       .setRestitution(0.0)
       .setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Max)
       .setRestitutionCombineRule(this.RAPIER.CoefficientCombineRule.Min);

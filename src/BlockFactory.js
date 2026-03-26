@@ -8,12 +8,13 @@ export class BlockFactory {
     this.world = physics.world;
 
     this.blockSize = options.blockSize ?? 1;
-    this.cellSize = options.cellSize ?? this.blockSize * 0.45;
+    this.cellSize = options.cellSize ?? this.blockSize;
     this.visualCellScale = options.visualCellScale ?? 0.94;
 
-    this.fallSpeed = options.fallSpeed ?? 1.6;
-    this.linearDamping = options.linearDamping ?? 2.0;
-    this.angularDamping = options.angularDamping ?? 5.8;
+    this.slowFallSpeed = options.slowFallSpeed ?? 0.75;
+    this.fastFallSpeed = options.fastFallSpeed ?? 5.5;
+    this.linearDamping = options.linearDamping ?? 2.4;
+    this.angularDamping = options.angularDamping ?? 6.5;
     this.outlineScale = options.outlineScale ?? 1.045;
 
     this.geometryCache = new Map();
@@ -25,50 +26,127 @@ export class BlockFactory {
     this.nextShapeEntry = null;
   }
 
-createShapeLibrary() {
-  return [
-    { key: "I4",       name: "I Bar",      color: 0x27cfff, weight: 12, cells: [[-1.5,0,0],[-0.5,0,0],[0.5,0,0],[1.5,0,0]] },
-    { key: "O4",       name: "Square",     color: 0xffc928, weight: 10, cells: [[-0.5,-0.5,0],[0.5,-0.5,0],[-0.5,0.5,0],[0.5,0.5,0]] },
-    { key: "L4",       name: "L Block",    color: 0xff8a1f, weight: 12, cells: [[-1,0,0],[0,0,0],[1,0,0],[1,1,0]] },
-    { key: "T4",       name: "T Block",    color: 0xa64dff, weight: 12, cells: [[-1,0,0],[0,0,0],[1,0,0],[0,1,0]] },
-    { key: "S4",       name: "S Block",    color: 0x30d96b, weight: 10, cells: [[-1,0,0],[0,0,0],[0,1,0],[1,1,0]] },
-    { key: "Corner3D", name: "3D Corner",  color: 0xff4d57, weight: 12, cells: [[0,0,0],[1,0,0],[0,1,0],[0,0,1]] },
-    { key: "Tripod",   name: "Tripod",     color: 0x18d7c3, weight: 9,  cells: [[0,0,0],[1,0,0],[0,0,1],[0,1,0]] },
-    { key: "Pillar3",  name: "Pillar",     color: 0xe14cff, weight: 8,  cells: [[0,-1,0],[0,0,0],[0,1,0]] },
-    { key: "Bridge",   name: "Bridge",     color: 0x2f8fff, weight: 9,  cells: [[-1,0,0],[0,0,0],[1,0,0],[0,1,0],[0,0,1]] },
-    { key: "Step3D",   name: "3D Step",    color: 0xff4fb2, weight: 10, cells: [[-1,0,0],[0,0,0],[0,1,0],[1,1,0],[1,1,1]] },
-  ];
-}
-  getWeightedRandomEntry() {
-    let totalWeight = 0;
-    for (const entry of this.shapeEntries) totalWeight += entry.weight ?? 1;
+  createShapeLibrary() {
+    return [
+      {
+        key: "I",
+        name: "I Block",
+        color: 0x27cfff,
+        weight: 12,
+        cells: [
+          [-1.5, 0, 0],
+          [-0.5, 0, 0],
+          [0.5, 0, 0],
+          [1.5, 0, 0],
+        ],
+      },
+      {
+        key: "O",
+        name: "O Block",
+        color: 0xffc928,
+        weight: 10,
+        cells: [
+          [-0.5, -0.5, 0],
+          [0.5, -0.5, 0],
+          [-0.5, 0.5, 0],
+          [0.5, 0.5, 0],
+        ],
+      },
+      {
+        key: "T",
+        name: "T Block",
+        color: 0xa64dff,
+        weight: 12,
+        cells: [
+          [-1, 0, 0],
+          [0, 0, 0],
+          [1, 0, 0],
+          [0, 1, 0],
+        ],
+      },
+      {
+        key: "S",
+        name: "S Block",
+        color: 0x30d96b,
+        weight: 10,
+        cells: [
+          [-1, 0, 0],
+          [0, 0, 0],
+          [0, 1, 0],
+          [1, 1, 0],
+        ],
+      },
+      {
+        key: "Z",
+        name: "Z Block",
+        color: 0xff5a68,
+        weight: 10,
+        cells: [
+          [1, 0, 0],
+          [0, 0, 0],
+          [0, 1, 0],
+          [-1, 1, 0],
+        ],
+      },
+      {
+        key: "J",
+        name: "J Block",
+        color: 0x4f7cff,
+        weight: 12,
+        cells: [
+          [-1, 1, 0],
+          [-1, 0, 0],
+          [0, 0, 0],
+          [1, 0, 0],
+        ],
+      },
+      {
+        key: "L",
+        name: "L Block",
+        color: 0xff8a1f,
+        weight: 12,
+        cells: [
+          [1, 1, 0],
+          [-1, 0, 0],
+          [0, 0, 0],
+          [1, 0, 0],
+        ],
+      },
+    ];
+  }
 
-    let r = Math.random() * totalWeight;
-    for (const entry of this.shapeEntries) {
-      r -= entry.weight ?? 1;
-      if (r <= 0) {
-        return {
-          key: entry.key,
-          name: entry.name,
-          color: entry.color,
-          weight: entry.weight,
-          cells: entry.cells.map((c) => [...c]),
-        };
-      }
-    }
-
-    const last = this.shapeEntries[this.shapeEntries.length - 1];
+  cloneEntry(entry) {
     return {
-      key: last.key,
-      name: last.name,
-      color: last.color,
-      weight: last.weight,
-      cells: last.cells.map((c) => [...c]),
+      key: entry.key,
+      name: entry.name,
+      color: entry.color,
+      weight: entry.weight,
+      cells: entry.cells.map((c) => [...c]),
     };
   }
 
+  getWeightedRandomEntry() {
+    let totalWeight = 0;
+    for (const entry of this.shapeEntries) {
+      totalWeight += entry.weight ?? 1;
+    }
+
+    let r = Math.random() * totalWeight;
+
+    for (const entry of this.shapeEntries) {
+      r -= entry.weight ?? 1;
+      if (r <= 0) {
+        return this.cloneEntry(entry);
+      }
+    }
+
+    return this.cloneEntry(this.shapeEntries[this.shapeEntries.length - 1]);
+  }
+
   async ensureNextModelEntry() {
-    if (!this.nextShapeEntry) this.nextShapeEntry = this.getWeightedRandomEntry();
+    if (!this.nextShapeEntry) {
+      this.nextShapeEntry = this.getWeightedRandomEntry();
+    }
     return this.nextShapeEntry;
   }
 
@@ -92,35 +170,19 @@ createShapeLibrary() {
     return geometry;
   }
 
-getMaterial(color) {
-  const key = `normal-${color}`;
-  if (this.materialCache.has(key)) return this.materialCache.get(key);
+  getMaterial(color) {
+    const key = `normal-${color}`;
+    if (this.materialCache.has(key)) return this.materialCache.get(key);
 
-  const material = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.72,
-    metalness: 0.06,
-  });
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.72,
+      metalness: 0.06,
+    });
 
-  this.materialCache.set(key, material);
-  return material;
-}
-
-getPreviewMaterial(color) {
-  const key = `preview-${color}`;
-  if (this.previewMaterialCache.has(key)) return this.previewMaterialCache.get(key);
-
-  const material = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.72,
-    metalness: 0.06,
-    transparent: true,
-    opacity: 0.92,
-  });
-
-  this.previewMaterialCache.set(key, material);
-  return material;
-}
+    this.materialCache.set(key, material);
+    return material;
+  }
 
   getPreviewMaterial(color) {
     const key = `preview-${color}`;
@@ -128,7 +190,7 @@ getPreviewMaterial(color) {
 
     const material = new THREE.MeshStandardMaterial({
       color,
-      roughness: 0.86,
+      roughness: 0.84,
       metalness: 0.04,
       transparent: true,
       opacity: 0.92,
@@ -156,6 +218,7 @@ getPreviewMaterial(color) {
 
   buildShapeData(entry) {
     const halfExtent = this.cellSize / 2;
+    const colliderHalfExtent = halfExtent * 0.94;
 
     const cellOffsets = entry.cells.map(([x, y, z]) => ({
       x: x * this.cellSize,
@@ -163,20 +226,23 @@ getPreviewMaterial(color) {
       z: z * this.cellSize,
     }));
 
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    let minZ = Infinity, maxZ = -Infinity;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
     let footprintRadius = 0;
 
     for (const c of cellOffsets) {
-      minX = Math.min(minX, c.x - halfExtent);
-      maxX = Math.max(maxX, c.x + halfExtent);
-      minY = Math.min(minY, c.y - halfExtent);
-      maxY = Math.max(maxY, c.y + halfExtent);
-      minZ = Math.min(minZ, c.z - halfExtent);
-      maxZ = Math.max(maxZ, c.z + halfExtent);
+      minX = Math.min(minX, c.x - colliderHalfExtent);
+      maxX = Math.max(maxX, c.x + colliderHalfExtent);
+      minY = Math.min(minY, c.y - colliderHalfExtent);
+      maxY = Math.max(maxY, c.y + colliderHalfExtent);
+      minZ = Math.min(minZ, c.z - colliderHalfExtent);
+      maxZ = Math.max(maxZ, c.z + colliderHalfExtent);
 
-      const r = Math.hypot(c.x, c.z) + halfExtent;
+      const r = Math.hypot(c.x, c.z) + colliderHalfExtent;
       if (r > footprintRadius) footprintRadius = r;
     }
 
@@ -187,6 +253,7 @@ getPreviewMaterial(color) {
       weight: entry.weight,
       cellOffsets,
       halfExtent,
+      colliderHalfExtent,
       halfHeight: (maxY - minY) * 0.5,
       footprintRadius,
       bounds: { minX, maxX, minY, maxY, minZ, maxZ },
@@ -253,18 +320,18 @@ getPreviewMaterial(color) {
   }
 
   createPreviewBody(spawnY, shapeData) {
-    const rbDesc = this.RAPIER.RigidBodyDesc.kinematicPositionBased()
-      .setTranslation(0, spawnY, 0);
+    const rbDesc = this.RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(
+      0,
+      spawnY,
+      0
+    );
 
     const body = this.world.createRigidBody(rbDesc);
     const colliders = [];
+    const h = shapeData.colliderHalfExtent ?? shapeData.halfExtent;
 
     for (const offset of shapeData.cellOffsets) {
-      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(
-        shapeData.halfExtent,
-        shapeData.halfExtent,
-        shapeData.halfExtent
-      )
+      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(h, h, h)
         .setTranslation(offset.x, offset.y, offset.z)
         .setFriction(2.1)
         .setRestitution(0.0)
@@ -277,7 +344,7 @@ getPreviewMaterial(color) {
     return { body, colliders };
   }
 
-  createDynamicBody(position, rotation, shapeData) {
+  createDynamicBody(position, rotation, shapeData, fallSpeed = this.fastFallSpeed) {
     const rbDesc = this.RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(position.x, position.y, position.z)
       .setRotation(rotation)
@@ -288,16 +355,15 @@ getPreviewMaterial(color) {
     const body = this.world.createRigidBody(rbDesc);
     body.setGravityScale(1, true);
 
-    if (typeof body.enableCcd === "function") body.enableCcd(true);
+    if (typeof body.enableCcd === "function") {
+      body.enableCcd(true);
+    }
 
     const colliders = [];
+    const h = shapeData.colliderHalfExtent ?? shapeData.halfExtent;
 
     for (const offset of shapeData.cellOffsets) {
-      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(
-        shapeData.halfExtent,
-        shapeData.halfExtent,
-        shapeData.halfExtent
-      )
+      const colliderDesc = this.RAPIER.ColliderDesc.cuboid(h, h, h)
         .setTranslation(offset.x, offset.y, offset.z)
         .setDensity(0.95)
         .setFriction(2.35)
@@ -308,7 +374,7 @@ getPreviewMaterial(color) {
       colliders.push(this.world.createCollider(colliderDesc, body));
     }
 
-    body.setLinvel({ x: 0, y: -this.fallSpeed, z: 0 }, true);
+    body.setLinvel({ x: 0, y: -fallSpeed, z: 0 }, true);
     body.setAngvel({ x: 0, y: 0, z: 0 }, true);
 
     return { body, colliders };
@@ -346,13 +412,13 @@ getPreviewMaterial(color) {
     };
   }
 
-  convertPreviewToDynamic(block) {
+  convertPreviewToDynamic(block, fallSpeed = this.fastFallSpeed) {
     const pos = block.body.translation();
     const rot = block.body.rotation();
 
     this.world.removeRigidBody(block.body);
 
-    const dynamic = this.createDynamicBody(pos, rot, block.collision);
+    const dynamic = this.createDynamicBody(pos, rot, block.collision, fallSpeed);
 
     block.body = dynamic.body;
     block.collider = dynamic.colliders[0] ?? null;

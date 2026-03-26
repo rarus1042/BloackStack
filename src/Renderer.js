@@ -3,8 +3,8 @@ import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.128.0/exampl
 
 export class Renderer {
   constructor(options = {}) {
-    this.stageSize = options.stageSize ?? 3;
-    this.stageRadius = this.stageSize / 2;
+    this.stageSize = options.stageSize ?? 6;
+    this.stageHalf = this.stageSize / 2;
     this.groundHeight = options.groundHeight ?? 0.12;
     this.stageThickness = options.stageThickness ?? 0.16;
 
@@ -17,7 +17,7 @@ export class Renderer {
       0.1,
       1000
     );
-    this.camera.position.set(6.6, 5.1, 6.6);
+    this.camera.position.set(8.4, 6.4, 8.4);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -40,8 +40,6 @@ export class Renderer {
     canvas.style.height = "100vh";
     canvas.style.display = "block";
     canvas.style.zIndex = "0";
-
-    // 모바일 터치 입력 안정화
     canvas.style.touchAction = "none";
     canvas.style.webkitTouchCallout = "none";
     canvas.style.webkitTapHighlightColor = "transparent";
@@ -70,11 +68,11 @@ export class Renderer {
     this.controls.dampingFactor = 0.08;
 
     this.cameraFollowLerp = options.cameraFollowLerp ?? 0.12;
-    this.cameraHeightOffset = options.cameraHeightOffset ?? 0.18;
-    this.cameraMinTargetY = options.cameraMinTargetY ?? 0.75;
+    this.cameraHeightOffset = options.cameraHeightOffset ?? 0.25;
+    this.cameraMinTargetY = options.cameraMinTargetY ?? 0.85;
     this.heightStep = options.heightStep ?? 0.5;
 
-    this.defaultCameraPosition = new THREE.Vector3(6.6, 5.1, 6.6);
+    this.defaultCameraPosition = new THREE.Vector3(8.4, 6.4, 8.4);
     this.defaultTarget = new THREE.Vector3(0, this.cameraMinTargetY, 0);
     this.controls.target.copy(this.defaultTarget);
 
@@ -85,7 +83,8 @@ export class Renderer {
     this.backgroundTexture = null;
     this.grassTexture = null;
     this.grassNormal = null;
-   this.landingEffects = [];
+    this.landingEffects = [];
+
     this.setupLights();
     this.setupFog();
     this.setupStage();
@@ -118,9 +117,6 @@ export class Renderer {
 
           this.backgroundTexture = texture;
           this.scene.background = texture;
-
-          // 모바일 터치/프레임 안정성을 위해 environment는 일단 비활성
-          // 필요하면 나중에 옵션으로 다시 켜도 됨
           this.scene.environment = null;
 
           resolve(texture);
@@ -145,7 +141,7 @@ export class Renderer {
           colorTex.wrapS = THREE.RepeatWrapping;
           colorTex.wrapT = THREE.RepeatWrapping;
 
-          const repeat = Math.max(10, Math.round(this.stageSize * 4));
+          const repeat = Math.max(10, Math.round(this.stageSize * 3));
           colorTex.repeat.set(repeat, repeat);
 
           const maxAnisotropy = this.renderer.capabilities.getMaxAnisotropy
@@ -169,8 +165,7 @@ export class Renderer {
               resolve();
             },
             undefined,
-            (error) => {
-              console.warn("Grass normal load failed:", error);
+            () => {
               this.grassTexture = colorTex;
               this.grassNormal = null;
               resolve();
@@ -201,22 +196,21 @@ export class Renderer {
     this.directionalLight = new THREE.DirectionalLight(0xffffff, 1.45);
     this.directionalLight.position.set(8, 14, 10);
     this.directionalLight.castShadow = true;
-
     this.directionalLight.shadow.mapSize.width = 2048;
     this.directionalLight.shadow.mapSize.height = 2048;
     this.directionalLight.shadow.camera.near = 0.5;
     this.directionalLight.shadow.camera.far = 60;
-    this.directionalLight.shadow.camera.left = -15;
-    this.directionalLight.shadow.camera.right = 15;
-    this.directionalLight.shadow.camera.top = 15;
-    this.directionalLight.shadow.camera.bottom = -15;
+    this.directionalLight.shadow.camera.left = -18;
+    this.directionalLight.shadow.camera.right = 18;
+    this.directionalLight.shadow.camera.top = 18;
+    this.directionalLight.shadow.camera.bottom = -18;
     this.directionalLight.shadow.bias = -0.00015;
 
     this.scene.add(this.directionalLight);
   }
 
   setupStage() {
-    const radius = this.stageRadius;
+    const size = this.stageSize;
     const thickness = this.stageThickness;
     const topY = this.groundHeight;
     const centerY = topY - thickness / 2;
@@ -241,7 +235,7 @@ export class Renderer {
       this.rimMesh = null;
     }
 
-    const groundGeometry = new THREE.CylinderGeometry(radius, radius, thickness, 96);
+    const groundGeometry = new THREE.BoxGeometry(size, thickness, size);
 
     const sideMaterial = new THREE.MeshStandardMaterial({
       color: 0x6c8f45,
@@ -249,26 +243,26 @@ export class Renderer {
       metalness: 0.0,
     });
 
-const topMaterial = this.grassTexture
-  ? new THREE.MeshPhysicalMaterial({
-      map: this.grassTexture,
-      normalMap: this.grassNormal || null,
-      ...(this.grassNormal ? { normalScale: new THREE.Vector2(2.6, 2.6) } : {}),
-      roughness: 0.92,
-      metalness: 0.0,
-      clearcoat: 0.06,
-      clearcoatRoughness: 1.0,
-      reflectivity: 0.15,
-      envMapIntensity: 0.0,
-    })
-  : new THREE.MeshPhysicalMaterial({
-      color: 0x63a84a,
-      roughness: 0.95,
-      metalness: 0.0,
-      clearcoat: 0.04,
-      clearcoatRoughness: 1.0,
-      reflectivity: 0.1,
-    });
+    const topMaterial = this.grassTexture
+      ? new THREE.MeshPhysicalMaterial({
+          map: this.grassTexture,
+          normalMap: this.grassNormal || null,
+          ...(this.grassNormal ? { normalScale: new THREE.Vector2(2.6, 2.6) } : {}),
+          roughness: 0.92,
+          metalness: 0.0,
+          clearcoat: 0.06,
+          clearcoatRoughness: 1.0,
+          reflectivity: 0.15,
+          envMapIntensity: 0.0,
+        })
+      : new THREE.MeshPhysicalMaterial({
+          color: 0x63a84a,
+          roughness: 0.95,
+          metalness: 0.0,
+          clearcoat: 0.04,
+          clearcoatRoughness: 1.0,
+          reflectivity: 0.1,
+        });
 
     const bottomMaterial = new THREE.MeshStandardMaterial({
       color: 0x5b6a4a,
@@ -278,8 +272,11 @@ const topMaterial = this.grassTexture
 
     this.groundMesh = new THREE.Mesh(groundGeometry, [
       sideMaterial,
-      topMaterial,
       bottomMaterial,
+      topMaterial,
+      topMaterial,
+      topMaterial,
+      topMaterial,
     ]);
 
     this.groundMesh.position.set(0, centerY, 0);
@@ -287,25 +284,16 @@ const topMaterial = this.grassTexture
     this.groundMesh.castShadow = false;
     this.scene.add(this.groundMesh);
 
-    const rimGeometry = new THREE.TorusGeometry(radius, 0.025, 20, 120);
-    const rimMaterial = new THREE.MeshStandardMaterial({
+    const edgeGeom = new THREE.EdgesGeometry(new THREE.BoxGeometry(size, thickness + 0.01, size));
+    const edgeMat = new THREE.LineBasicMaterial({
       color: 0xf2f5ea,
-      roughness: 0.72,
-      metalness: 0.02,
+      transparent: true,
+      opacity: 0.9,
     });
 
-    this.rimMesh = new THREE.Mesh(rimGeometry, rimMaterial);
-    this.rimMesh.rotation.x = Math.PI / 2;
-    this.rimMesh.position.y = topY + 0.002;
+    this.rimMesh = new THREE.LineSegments(edgeGeom, edgeMat);
+    this.rimMesh.position.set(0, centerY, 0);
     this.scene.add(this.rimMesh);
-  }
-
-  add(object) {
-    this.scene.add(object);
-  }
-
-  remove(object) {
-    this.scene.remove(object);
   }
 
   quantizeHeightStep(height) {
@@ -340,7 +328,7 @@ const topMaterial = this.grassTexture
     this.controls.update();
   }
 
-    spawnLandingEffect(position, options = {}) {
+  spawnLandingEffect(position, options = {}) {
     const radius = options.radius ?? 0.48;
     const color = options.color ?? 0xffd07a;
 
@@ -374,42 +362,14 @@ const topMaterial = this.grassTexture
     glow.position.y = 0.005;
     root.add(glow);
 
-    const particles = [];
-    const particleMat = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.85,
-      depthWrite: false,
-    });
-
-    for (let i = 0; i < 8; i++) {
-      const p = new THREE.Mesh(
-        new THREE.SphereGeometry(0.03, 8, 8),
-        particleMat.clone()
-      );
-
-      const angle = (i / 8) * Math.PI * 2;
-      const speed = radius * (1.1 + Math.random() * 0.45);
-
-      p.position.set(Math.cos(angle) * radius * 0.18, 0.04, Math.sin(angle) * radius * 0.18);
-      p.userData.vx = Math.cos(angle) * speed;
-      p.userData.vz = Math.sin(angle) * speed;
-      p.userData.vy = 0.85 + Math.random() * 0.35;
-
-      root.add(p);
-      particles.push(p);
-    }
-
     this.scene.add(root);
 
     this.landingEffects.push({
       root,
       ring,
       glow,
-      particles,
       elapsed: 0,
       duration: 0.42,
-      baseRadius: radius,
     });
   }
 
@@ -425,18 +385,8 @@ const topMaterial = this.grassTexture
 
       fx.ring.scale.setScalar(1 + t * 1.35);
       fx.glow.scale.setScalar(1 + t * 1.8);
-
       fx.ring.material.opacity = 0.72 * inv;
       fx.glow.material.opacity = 0.16 * inv;
-
-      for (const p of fx.particles) {
-        p.position.x += p.userData.vx * dt;
-        p.position.z += p.userData.vz * dt;
-        p.position.y += p.userData.vy * dt;
-        p.userData.vy -= 2.8 * dt;
-        p.material.opacity = 0.85 * inv;
-        p.scale.setScalar(0.75 + inv * 0.75);
-      }
 
       if (t >= 1) {
         this.scene.remove(fx.root);
@@ -448,7 +398,7 @@ const topMaterial = this.grassTexture
       }
     }
   }
-  
+
   update(dt = 0.016) {
     this.controls.update();
     this.updateLandingEffects(dt);
