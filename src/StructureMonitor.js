@@ -3,7 +3,7 @@ export class StructureMonitor {
     this.stageSize = options.stageSize ?? 5;
     this.stageHalf = this.stageSize / 2;
     this.failY = options.failY ?? -3;
-    this.failGraceTime = options.failGraceTime ?? 2; // 초
+    this.failGraceTime = options.failGraceTime ?? 1.5; // 초
     this.failCandidateSince = null;
 
     this.contactVerticalThreshold = options.contactVerticalThreshold ?? 0.32;
@@ -57,8 +57,33 @@ export class StructureMonitor {
     block.prevPosForJitter = null;
   }
 
-  updateDynamicBlocks(blocks) {
+  updateDynamicBlocks(blocks, options = {}) {
     const now = performance.now();
+    const slowLanding = !!options.slowLanding;
+
+    const contactVerticalThreshold = slowLanding
+      ? this.contactVerticalThreshold * 0.72
+      : this.contactVerticalThreshold;
+
+    const contactHorizontalThreshold = slowLanding
+      ? this.contactHorizontalThreshold * 0.9
+      : this.contactHorizontalThreshold;
+
+    const contactFramesRequired = slowLanding
+      ? Math.max(this.contactFramesRequired, 10)
+      : this.contactFramesRequired;
+
+    const landingMinFrames = slowLanding
+      ? Math.max(this.landingMinFrames, 8)
+      : this.landingMinFrames;
+
+    const landingStableFramesRequired = slowLanding
+      ? Math.max(this.landingStableFramesRequired, 10)
+      : this.landingStableFramesRequired;
+
+    const maxLandingTime = slowLanding
+      ? Math.max(this.maxLandingTime, 7.5)
+      : this.maxLandingTime;
 
     for (const block of blocks) {
       if (
@@ -81,12 +106,12 @@ export class StructureMonitor {
 
       if (block.state === "falling") {
         const looksLikeContact =
-          verticalSpeed < this.contactVerticalThreshold &&
-          horizontalSpeed < this.contactHorizontalThreshold;
+          verticalSpeed < contactVerticalThreshold &&
+          horizontalSpeed < contactHorizontalThreshold;
 
         block.contactFrames = looksLikeContact ? (block.contactFrames ?? 0) + 1 : 0;
 
-        if (block.contactFrames >= this.contactFramesRequired) {
+        if (block.contactFrames >= contactFramesRequired) {
           block.state = "landing";
           block.landingFrames = 0;
           block.stableFrames = 0;
@@ -95,20 +120,22 @@ export class StructureMonitor {
           block.landingStartTime = now;
           block.prevPosForJitter = { x: pos.x, y: pos.y, z: pos.z };
 
+          const settleDamping = slowLanding ? 0.6 : 0.35;
+
           block.body.setLinvel(
             {
-              x: lv.x * 0.35,
-              y: lv.y * 0.35,
-              z: lv.z * 0.35,
+              x: lv.x * settleDamping,
+              y: lv.y * settleDamping,
+              z: lv.z * settleDamping,
             },
             true
           );
 
           block.body.setAngvel(
             {
-              x: av.x * 0.35,
-              y: av.y * 0.35,
-              z: av.z * 0.35,
+              x: av.x * settleDamping,
+              y: av.y * settleDamping,
+              z: av.z * settleDamping,
             },
             true
           );
@@ -120,31 +147,34 @@ export class StructureMonitor {
       if (block.state === "landing") {
         block.landingFrames = (block.landingFrames ?? 0) + 1;
 
+        const linearDampingFactor = slowLanding ? 0.9 : 0.82;
+        const angularDampingFactor = slowLanding ? 0.88 : 0.78;
+
         block.body.setLinvel(
           {
-            x: lv.x * 0.82,
-            y: lv.y * 0.82,
-            z: lv.z * 0.82,
+            x: lv.x * linearDampingFactor,
+            y: lv.y * linearDampingFactor,
+            z: lv.z * linearDampingFactor,
           },
           true
         );
 
         block.body.setAngvel(
           {
-            x: av.x * 0.78,
-            y: av.y * 0.78,
-            z: av.z * 0.78,
+            x: av.x * angularDampingFactor,
+            y: av.y * angularDampingFactor,
+            z: av.z * angularDampingFactor,
           },
           true
         );
 
         const yDelta = Math.abs(currentY - (block.landingStartY ?? currentY));
 
-        if (block.landingFrames >= this.landingMinFrames) {
+        if (block.landingFrames >= landingMinFrames) {
           if (
             yDelta <= this.maxLandingYDelta &&
-            linearSpeed <= this.contactHorizontalThreshold &&
-            angularSpeed <= this.contactHorizontalThreshold
+            linearSpeed <= contactHorizontalThreshold &&
+            angularSpeed <= contactHorizontalThreshold
           ) {
             block.stableFrames = (block.stableFrames ?? 0) + 1;
           } else {
@@ -179,7 +209,7 @@ export class StructureMonitor {
 
         const landingElapsedSec = (now - (block.landingStartTime ?? now)) / 1000;
 
-        if (block.stableFrames >= this.landingStableFramesRequired) {
+        if (block.stableFrames >= landingStableFramesRequired) {
           this.forceSettle(block);
           continue;
         }
@@ -189,7 +219,7 @@ export class StructureMonitor {
           continue;
         }
 
-        if (landingElapsedSec >= this.maxLandingTime) {
+        if (landingElapsedSec >= maxLandingTime) {
           this.forceSettle(block);
           continue;
         }
@@ -260,46 +290,44 @@ export class StructureMonitor {
     return highest;
   }
 
-checkFail(blocks) {
-  const now = performance.now();
-  const margin = 1.15;
+  checkFail(blocks) {
+    const now = performance.now();
+    const margin = 1.15;
 
-  let hasFailCandidate = false;
+    let hasFailCandidate = false;
 
-  for (const block of blocks) {
-    if (block.state === "preview") continue;
+    for (const block of blocks) {
+      if (block.state === "preview") continue;
 
-    const pos = block.body.translation();
+      const pos = block.body.translation();
 
-    // 지금 파일은 원형 기준이라 너무 빨리 실패가 날 수 있음
-    // 정사각형 스테이지 + 여유 마진 기준으로 변경
-    const outOfStage =
-      Math.abs(pos.x) > this.stageSize * 0.5 + margin ||
-      Math.abs(pos.z) > this.stageSize * 0.5 + margin;
+      const outOfStage =
+        Math.abs(pos.x) > this.stageSize * 0.5 + margin ||
+        Math.abs(pos.z) > this.stageSize * 0.5 + margin;
 
-    const belowStage = pos.y < this.failY - 0.35;
+      const belowStage = pos.y < this.failY - 0.35;
 
-    if (outOfStage || belowStage) {
-      hasFailCandidate = true;
-      break;
+      if (outOfStage || belowStage) {
+        hasFailCandidate = true;
+        break;
+      }
     }
-  }
 
-  if (!hasFailCandidate) {
-    this.failCandidateSince = null;
-    return false;
-  }
+    if (!hasFailCandidate) {
+      this.failCandidateSince = null;
+      return false;
+    }
 
-  if (this.failCandidateSince === null) {
-    this.failCandidateSince = now;
-    return false;
-  }
+    if (this.failCandidateSince === null) {
+      this.failCandidateSince = now;
+      return false;
+    }
 
-  const elapsedSec = (now - this.failCandidateSince) / 1000;
-  if (elapsedSec < this.failGraceTime) {
-    return false;
-  }
+    const elapsedSec = (now - this.failCandidateSince) / 1000;
+    if (elapsedSec < this.failGraceTime) {
+      return false;
+    }
 
-  return true;
-}
+    return true;
+  }
 }

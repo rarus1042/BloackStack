@@ -34,6 +34,9 @@ export class BlockSystem {
     this.peakStableHeight = 0;
     this.heightStep = options.heightStep ?? 0.5;
 
+    this.lastRotateInputTime = 0;
+this.rotateSlowLandingWindowMs = 300; // 👈 0.3초
+
     this.previewX = 0;
     this.previewY = 0;
     this.previewZ = 0;
@@ -54,6 +57,11 @@ export class BlockSystem {
     this.tmpVecC = new THREE.Vector3();
 
     this.predictionCoarsePos = new THREE.Vector3();
+
+    this.isPreviewRotating = false;
+    this.previewRotateSlowLandingUntil = 0;
+    this.rotateFallMultiplier = options.rotateFallMultiplier ?? 0.18;
+    this.rotateSlowLandingGraceMs = options.rotateSlowLandingGraceMs ?? 240;
 
     this.factory = new BlockFactory(scene, physics, {
       blockSize: this.blockSize,
@@ -90,6 +98,28 @@ export class BlockSystem {
 
   setGameStarted(started) {
     this.gameStarted = !!started;
+  }
+
+setPreviewRotating(rotating) {
+  this.isPreviewRotating = !!rotating;
+
+  if (rotating) {
+    this.lastRotateInputTime = performance.now();
+  }
+}
+isSlowLandingMode() {
+  const now = performance.now();
+
+
+  // 마지막 회전 입력 이후 0.3초 동안만 slow
+  return now - this.lastRotateInputTime < this.rotateSlowLandingWindowMs;
+}
+  getPreviewFallSpeedMultiplier() {
+    if (this.isSlowLandingMode()) {
+      return this.rotateFallMultiplier;
+    }
+
+    return 1;
   }
 
   getGridStep() {
@@ -139,7 +169,7 @@ export class BlockSystem {
     if (this.currentBlock) return;
     if (this.isSpawning) return;
     if (this.state === "WAITING") return;
-
+this.lastRotateInputTime = 0;
     this.isSpawning = true;
 
     try {
@@ -151,6 +181,8 @@ export class BlockSystem {
       this.previewZ = 0;
       this.previewQuaternion.identity();
       this.previewFallMultiplier = 1;
+      this.isPreviewRotating = false;
+      this.previewRotateSlowLandingUntil = 0;
 
       this.currentBlock = block;
       this.blocks.push(block);
@@ -181,107 +213,109 @@ export class BlockSystem {
     this.currentBlock.body.setRotation(this.previewQuaternion, true);
   }
 
-setPreviewPosition(x, z) {
-  if (!this.currentBlock) return false;
-  if (this.currentBlock.state !== "preview") return false;
-  if (this.state !== "EDIT") return false;
+  setPreviewPosition(x, z) {
+    if (!this.currentBlock) return false;
+    if (this.currentBlock.state !== "preview") return false;
+    if (this.state !== "EDIT") return false;
 
-  const block = this.currentBlock;
-  const shapeData = block.collision;
-  if (!shapeData) return false;
+    const block = this.currentBlock;
+    const shapeData = block.collision;
+    if (!shapeData) return false;
 
-  const startX = this.previewX;
-  const startZ = this.previewZ;
+    const startX = this.previewX;
+    const startZ = this.previewZ;
 
-  const clampedTarget = this.clampPreviewPosition(x, z);
-  const targetX = clampedTarget.x;
-  const targetZ = clampedTarget.z;
+    const clampedTarget = this.clampPreviewPosition(x, z);
+    const targetX = clampedTarget.x;
+    const targetZ = clampedTarget.z;
 
-  const deltaX = targetX - startX;
-  const deltaZ = targetZ - startZ;
+    const deltaX = targetX - startX;
+    const deltaZ = targetZ - startZ;
 
-  if (Math.abs(deltaX) < 1e-9 && Math.abs(deltaZ) < 1e-9) {
+    if (Math.abs(deltaX) < 1e-9 && Math.abs(deltaZ) < 1e-9) {
+      return true;
+    }
+
+    const distance = Math.hypot(deltaX, deltaZ);
+    const subStepSize = Math.max(0.08, this.gridStep * 0.2);
+    const steps = Math.max(1, Math.ceil(distance / subStepSize));
+
+    let lastFreeX = startX;
+    let lastFreeZ = startZ;
+
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const testX = startX + deltaX * t;
+      const testZ = startZ + deltaZ * t;
+
+      const testPosition = new THREE.Vector3(testX, this.previewY, testZ);
+
+      if (this.collidesShapeAt(testPosition, this.previewQuaternion, shapeData, block)) {
+        break;
+      }
+
+      lastFreeX = testX;
+      lastFreeZ = testZ;
+    }
+
+    this.previewX = this.snapToGrid(lastFreeX);
+    this.previewZ = this.snapToGrid(lastFreeZ);
+    this.applyPreviewTransform();
     return true;
   }
 
-  // 이동 경로를 잘게 나눠서 "갈 수 있는 마지막 위치"를 찾는다.
-  const distance = Math.hypot(deltaX, deltaZ);
-  const subStepSize = Math.max(0.08, this.gridStep * 0.2);
-  const steps = Math.max(1, Math.ceil(distance / subStepSize));
+  movePreviewByGrid(dx, dz) {
+    if (!this.currentBlock) return false;
+    if (this.currentBlock.state !== "preview") return false;
+    if (this.state !== "EDIT") return false;
 
-  let lastFreeX = startX;
-  let lastFreeZ = startZ;
+    const beforeX = this.previewX;
+    const beforeZ = this.previewZ;
 
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    const testX = startX + deltaX * t;
-    const testZ = startZ + deltaZ * t;
+    const moved = this.setPreviewPosition(this.previewX + dx, this.previewZ + dz);
+    if (!moved) return false;
 
-    const testPosition = new THREE.Vector3(testX, this.previewY, testZ);
+    return (
+      Math.abs(this.previewX - beforeX) > 1e-9 ||
+      Math.abs(this.previewZ - beforeZ) > 1e-9
+    );
+  }
 
-    if (this.collidesShapeAt(testPosition, this.previewQuaternion, shapeData, block)) {
-      break;
+  rotatePreviewByAxis(axis, angle) {
+    if (!this.currentBlock || this.currentBlock.state !== "preview") return false;
+    if (this.state !== "EDIT") return false;
+
+    const block = this.currentBlock;
+    const shapeData = block.collision;
+    if (!shapeData) return false;
+
+    if (axis === "x") this.tempAxis.set(1, 0, 0);
+    else if (axis === "y") this.tempAxis.set(0, 1, 0);
+    else if (axis === "z") this.tempAxis.set(0, 0, 1);
+    else return false;
+
+    this.tempAxis.applyQuaternion(this.previewQuaternion).normalize();
+    this.deltaQuaternion.setFromAxisAngle(this.tempAxis, angle);
+
+    const nextQuaternion = this.deltaQuaternion
+      .clone()
+      .multiply(this.previewQuaternion)
+      .normalize();
+
+    const testPosition = new THREE.Vector3(this.previewX, this.previewY, this.previewZ);
+
+    if (this.collidesShapeAt(testPosition, nextQuaternion, shapeData, block)) {
+      return false;
     }
 
-    lastFreeX = testX;
-    lastFreeZ = testZ;
+    this.previewQuaternion.copy(nextQuaternion);
+    this.previewRotateSlowLandingUntil =
+      performance.now() + this.rotateSlowLandingGraceMs;
+
+this.lastRotateInputTime = performance.now();
+    this.applyPreviewTransform();
+    return true;
   }
-
-  this.previewX = this.snapToGrid(lastFreeX);
-  this.previewZ = this.snapToGrid(lastFreeZ);
-  this.applyPreviewTransform();
-  return true;
-}
-
-movePreviewByGrid(dx, dz) {
-  if (!this.currentBlock) return false;
-  if (this.currentBlock.state !== "preview") return false;
-  if (this.state !== "EDIT") return false;
-
-  const beforeX = this.previewX;
-  const beforeZ = this.previewZ;
-
-  const moved = this.setPreviewPosition(this.previewX + dx, this.previewZ + dz);
-  if (!moved) return false;
-
-  return (
-    Math.abs(this.previewX - beforeX) > 1e-9 ||
-    Math.abs(this.previewZ - beforeZ) > 1e-9
-  );
-}
-
-rotatePreviewByAxis(axis, angle) {
-  if (!this.currentBlock || this.currentBlock.state !== "preview") return false;
-  if (this.state !== "EDIT") return false;
-
-  const block = this.currentBlock;
-  const shapeData = block.collision;
-  if (!shapeData) return false;
-
-  if (axis === "x") this.tempAxis.set(1, 0, 0);
-  else if (axis === "y") this.tempAxis.set(0, 1, 0);
-  else if (axis === "z") this.tempAxis.set(0, 0, 1);
-  else return false;
-
-  this.tempAxis.applyQuaternion(this.previewQuaternion).normalize();
-  this.deltaQuaternion.setFromAxisAngle(this.tempAxis, angle);
-
-  const nextQuaternion = this.deltaQuaternion
-    .clone()
-    .multiply(this.previewQuaternion)
-    .normalize();
-
-  const testPosition = new THREE.Vector3(this.previewX, this.previewY, this.previewZ);
-
-  // 회전 완료 상태가 충돌이면 회전 취소
-  if (this.collidesShapeAt(testPosition, nextQuaternion, shapeData, block)) {
-    return false;
-  }
-
-  this.previewQuaternion.copy(nextQuaternion);
-  this.applyPreviewTransform();
-  return true;
-}
 
   rotatePreview90(axis, turns = 1) {
     const normalizedTurns = Math.trunc(turns);
@@ -308,13 +342,15 @@ rotatePreviewByAxis(axis, angle) {
     if (this.state !== "EDIT") return false;
 
     const block = this.currentBlock;
-
+this.lastRotateInputTime = 0;
     this.factory.convertPreviewToDynamic(block, this.fastFallSpeed);
     block.committed = true;
     this.lastCommittedBlockId = block.id;
 
     this.currentBlock = null;
     this.previewFallMultiplier = 1;
+    this.isPreviewRotating = false;
+    this.previewRotateSlowLandingUntil = 0;
     this.state = "WAITING";
     return true;
   }
@@ -325,13 +361,15 @@ rotatePreviewByAxis(axis, angle) {
     if (this.state !== "EDIT") return false;
 
     const block = this.currentBlock;
-
+this.lastRotateInputTime = 0;
     this.factory.convertPreviewToDynamic(block, this.slowFallSpeed);
     block.committed = true;
     this.lastCommittedBlockId = block.id;
 
     this.currentBlock = null;
     this.previewFallMultiplier = 1;
+    this.isPreviewRotating = false;
+    this.previewRotateSlowLandingUntil = 0;
     this.state = "WAITING";
     return true;
   }
@@ -401,7 +439,9 @@ rotatePreviewByAxis(axis, angle) {
     if (!prediction?.position) return;
 
     const targetY = prediction.position.y;
-    const speed = this.slowFallSpeed * this.previewFallMultiplier;
+    const baseSpeed = this.slowFallSpeed * this.previewFallMultiplier;
+    const rotationMultiplier = this.getPreviewFallSpeedMultiplier();
+    const speed = baseSpeed * rotationMultiplier;
     const nextY = Math.max(targetY, this.previewY - speed * dt);
 
     this.previewY = nextY;
@@ -476,11 +516,11 @@ rotatePreviewByAxis(axis, angle) {
   }
 
   canPlacePreviewAt(position, quaternion) {
-  const block = this.getCurrentPreviewBlock();
-  if (!block?.collision) return false;
+    const block = this.getCurrentPreviewBlock();
+    if (!block?.collision) return false;
 
-  return !this.collidesShapeAt(position, quaternion, block.collision, block);
-}
+    return !this.collidesShapeAt(position, quaternion, block.collision, block);
+  }
 
   collidesShapeAt(position, quaternion, shapeData, ignoreBlock = null) {
     const currentExtents = this.getShapeVerticalExtents(position, quaternion, shapeData);
@@ -650,7 +690,10 @@ rotatePreviewByAxis(axis, angle) {
       this.updatePreviewAutoFall(dt);
     }
 
-    this.monitor.updateDynamicBlocks(this.blocks);
+    this.monitor.updateDynamicBlocks(this.blocks, {
+      slowLanding: this.isSlowLandingMode(),
+    });
+
     this.meshSync.sync(this.blocks);
     this.updateHeights();
     this.tryFinishCurrentLanding();
@@ -669,7 +712,7 @@ rotatePreviewByAxis(axis, angle) {
     this.blocks = [];
     this.currentBlock = null;
     this.state = "IDLE";
-
+this.lastRotateInputTime = 0;
     this.liveHeight = 0;
     this.stableHeight = 0;
     this.peakStableHeight = 0;
@@ -679,6 +722,9 @@ rotatePreviewByAxis(axis, angle) {
     this.previewZ = 0;
     this.previewQuaternion.identity();
     this.previewFallMultiplier = 1;
+
+    this.isPreviewRotating = false;
+    this.previewRotateSlowLandingUntil = 0;
 
     this.waitingBlockId = 1;
     this.lastCommittedBlockId = 0;

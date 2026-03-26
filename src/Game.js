@@ -16,7 +16,7 @@ export class Game {
       gridStep: 1,
       previewClampPadding: 0.55,
 
-     slowFallSpeed: 1.0,
+      slowFallSpeed: 1.0,
       fastFallSpeed: 4.0,
 
       spawnClearance: 10.4,
@@ -27,6 +27,9 @@ export class Game {
       cameraFollowLerp: 0.12,
       cameraHeightOffset: 0.35,
       cameraMinTargetY: 0.85,
+
+      rotateFallMultiplier: 0.18,
+      rotateSlowLandingGraceMs: 240,
     };
 
     this.appVersion = "v0.2.0-tetris-grid-drop";
@@ -82,7 +85,7 @@ export class Game {
     this.rotateButtons = { x: null, y: null, z: null };
     this.rotationModeActive = false;
     this.selectedRotateAxis = null;
-    
+
     this.movePadPanel = null;
     this.moveButtons = { up: null, left: null, down: null, right: null };
 
@@ -122,31 +125,31 @@ export class Game {
     this.loadingRafId = null;
     this.isAnimating = false;
 
-this.animate = this.animate.bind(this);
-this.onResize = this.onResize.bind(this);
-this.onBgmToggleClick = this.onBgmToggleClick.bind(this);
-this.onRotateStepButtonClick = this.onRotateStepButtonClick.bind(this);
-this.onMoveButtonClick = this.onMoveButtonClick.bind(this);
-this.onKeyDown = this.onKeyDown.bind(this);
-this.onKeyUp = this.onKeyUp.bind(this);
-this.unlockBgm = this.unlockBgm.bind(this);
-this.loadingLoop = this.loadingLoop.bind(this);
-this.onStartButtonClick = this.onStartButtonClick.bind(this);
+    this.animate = this.animate.bind(this);
+    this.onResize = this.onResize.bind(this);
+    this.onBgmToggleClick = this.onBgmToggleClick.bind(this);
+    this.onRotateStepButtonClick = this.onRotateStepButtonClick.bind(this);
+    this.onMoveButtonClick = this.onMoveButtonClick.bind(this);
+    this.onKeyDown = this.onKeyDown.bind(this);
+    this.onKeyUp = this.onKeyUp.bind(this);
+    this.unlockBgm = this.unlockBgm.bind(this);
+    this.loadingLoop = this.loadingLoop.bind(this);
+    this.onStartButtonClick = this.onStartButtonClick.bind(this);
 
-this.onActionButtonPointerDown = this.onActionButtonPointerDown.bind(this);
-this.onActionButtonPointerUp = this.onActionButtonPointerUp.bind(this);
-this.onActionButtonPointerCancel = this.onActionButtonPointerCancel.bind(this);
+    this.onActionButtonPointerDown = this.onActionButtonPointerDown.bind(this);
+    this.onActionButtonPointerUp = this.onActionButtonPointerUp.bind(this);
+    this.onActionButtonPointerCancel = this.onActionButtonPointerCancel.bind(this);
 
-this.createBasicLabels();
-this.createLoadingScreen();
-this.createSettingsButton();
-this.createSettingsModal();
-this.createRotateStepButtons();
-this.createMovePad();
-this.createNextPreviewUI();
-this.createStartOverlay();
-this.applyGlobalUiLayout();
-this.setupBgmUnlock();
+    this.createBasicLabels();
+    this.createLoadingScreen();
+    this.createSettingsButton();
+    this.createSettingsModal();
+    this.createRotateStepButtons();
+    this.createMovePad();
+    this.createNextPreviewUI();
+    this.createStartOverlay();
+    this.applyGlobalUiLayout();
+    this.setupBgmUnlock();
   }
 
   createBasicLabels() {
@@ -193,11 +196,12 @@ this.setupBgmUnlock();
       1.02
     );
 
-const previewScale = THREE.MathUtils.clamp(
-  compactScale * (isLandscape && isMobile ? 0.75 : 0.85),
-  0.4,   // 👈 최소 더 낮춤
-  0.8   // 👈 최대값 제한 (핵심)
-);
+    const previewScale = THREE.MathUtils.clamp(
+      compactScale * (isLandscape && isMobile ? 0.75 : 0.85),
+      0.4,
+      0.8
+    );
+
     const controlScale = THREE.MathUtils.clamp(
       compactScale * (isLandscape && isMobile ? 0.78 : 0.9),
       0.54,
@@ -344,22 +348,23 @@ const previewScale = THREE.MathUtils.clamp(
       };
     }
 
-if (metrics.isMobile) {
-  return {
-    isMobile: true,
-    panelTop: 56,
-    panelRight: 8,
-    panelWidth: Math.round(120 + 14 * metrics.previewScale), // 👈 줄임
-    panelPadding: 8,
-    panelRadius: 14,
-    titleFont: 9,
-    canvasSize: Math.round(78 + 18 * metrics.previewScale), // 👈 줄임
-    canvasPixelSize: Math.round((78 + 18 * metrics.previewScale) * 2),
-    canvasRadius: 10,
-    nameFont: 9,
-    nameMinHeight: 16,
-  };
-}
+    if (metrics.isMobile) {
+      return {
+        isMobile: true,
+        panelTop: 56,
+        panelRight: 8,
+        panelWidth: Math.round(120 + 14 * metrics.previewScale),
+        panelPadding: 8,
+        panelRadius: 14,
+        titleFont: 9,
+        canvasSize: Math.round(78 + 18 * metrics.previewScale),
+        canvasPixelSize: Math.round((78 + 18 * metrics.previewScale) * 2),
+        canvasRadius: 10,
+        nameFont: 9,
+        nameMinHeight: 16,
+      };
+    }
+
     return {
       isMobile: false,
       panelTop: 84,
@@ -559,98 +564,99 @@ if (metrics.isMobile) {
     this.startOverlay = overlay;
   }
 
-updateStartOverlayLayout() {
-  if (!this.startOverlay) return;
+  updateStartOverlayLayout() {
+    if (!this.startOverlay) return;
 
-  const metrics = this.getResponsiveUiMetrics();
-  this.startOverlay.style.display =
-    this.isStartOverlayReady && !this.isSessionStarted ? "flex" : "none";
+    const metrics = this.getResponsiveUiMetrics();
+    this.startOverlay.style.display =
+      this.isStartOverlayReady && !this.isSessionStarted ? "flex" : "none";
 
-  const button = this.startButton;
-  if (button) {
-    button.style.height = metrics.isMobile ? "48px" : "52px";
-    button.style.fontSize = metrics.isMobile ? "15px" : "16px";
-  }
-}
-
-
-enterRotationMode(axis) {
-  if (!this.blockSystem) return false;
-  if (!this.isSessionStarted || this.isGameOver || this.isRestarting) return false;
-
-  const block = this.blockSystem.getCurrentPreviewBlock?.();
-  if (!block || this.blockSystem.state !== "EDIT") return false;
-
-  this.rotationModeActive = true;
-  this.selectedRotateAxis = axis;
-
-  if (this.rotateGizmo) {
-    this.rotateGizmo.syncToBlock(block);
-    this.rotateGizmo.show();
-    this.rotateGizmo.unlockAxis();
-    this.rotateGizmo.lockToAxis(axis);
-    this.rotateGizmo.setActiveAxis(axis);
-  }
-
-  this.updateRotateButtonsUI();
-  return true;
-}
-
-exitRotationMode() {
-  this.rotationModeActive = false;
-  this.selectedRotateAxis = null;
-
-  if (this.rotateGizmo) {
-    this.rotateGizmo.hide();
-  }
-
-  this.updateRotateButtonsUI();
-}
-
-applyRotationInput(axis) {
-  if (!axis || !this.blockSystem) return false;
-  if (!this.isSessionStarted || this.isGameOver || this.isRestarting) return false;
-
-  const block = this.blockSystem.getCurrentPreviewBlock?.();
-  if (!block || this.blockSystem.state !== "EDIT") return false;
-
-  if (!this.rotationModeActive || this.selectedRotateAxis !== axis) {
-    return this.enterRotationMode(axis);
-  }
-
-  const rotated = this.blockSystem.rotatePreview90(axis);
-  if (!rotated) return false;
-
-  if (this.rotateGizmo) {
-    const updatedBlock = this.blockSystem.getCurrentPreviewBlock?.();
-    if (updatedBlock) {
-      this.rotateGizmo.syncToBlock(updatedBlock);
-      this.rotateGizmo.lockToAxis(axis);
-      this.rotateGizmo.setActiveAxis(axis);
+    const button = this.startButton;
+    if (button) {
+      button.style.height = metrics.isMobile ? "48px" : "52px";
+      button.style.fontSize = metrics.isMobile ? "15px" : "16px";
     }
   }
 
-  return true;
-}
+  enterRotationMode(axis) {
+    if (!this.blockSystem) return false;
+    if (!this.isSessionStarted || this.isGameOver || this.isRestarting) return false;
 
-applyRotationConfirm() {
-  if (!this.rotationModeActive || !this.selectedRotateAxis) return false;
-  return this.applyRotationInput(this.selectedRotateAxis);
-}
+    const block = this.blockSystem.getCurrentPreviewBlock?.();
+    if (!block || this.blockSystem.state !== "EDIT") return false;
 
-syncRotationGizmo() {
-  if (!this.rotationModeActive || !this.rotateGizmo || !this.blockSystem) return;
+    this.rotationModeActive = true;
+    this.selectedRotateAxis = axis;
+    this.blockSystem?.setPreviewRotating(true);
 
-  const block = this.blockSystem.getCurrentPreviewBlock?.();
-  if (!block || this.blockSystem.state !== "EDIT") {
-    this.exitRotationMode();
-    return;
+    if (this.rotateGizmo) {
+      this.rotateGizmo.syncToBlock(block);
+      this.rotateGizmo.show();
+      this.rotateGizmo.unlockAxis();
+      this.rotateGizmo.lockToAxis(axis);
+      this.rotateGizmo.setActiveAxis(axis);
+    }
+
+    this.updateRotateButtonsUI();
+    return true;
   }
 
-  this.rotateGizmo.syncToBlock(block);
-  this.rotateGizmo.lockToAxis(this.selectedRotateAxis);
-  this.rotateGizmo.setActiveAxis(this.selectedRotateAxis);
-}
+  exitRotationMode() {
+    this.rotationModeActive = false;
+    this.selectedRotateAxis = null;
+    this.blockSystem?.setPreviewRotating(false);
+
+    if (this.rotateGizmo) {
+      this.rotateGizmo.hide();
+    }
+
+    this.updateRotateButtonsUI();
+  }
+
+  applyRotationInput(axis) {
+    if (!axis || !this.blockSystem) return false;
+    if (!this.isSessionStarted || this.isGameOver || this.isRestarting) return false;
+
+    const block = this.blockSystem.getCurrentPreviewBlock?.();
+    if (!block || this.blockSystem.state !== "EDIT") return false;
+
+    if (!this.rotationModeActive || this.selectedRotateAxis !== axis) {
+      return this.enterRotationMode(axis);
+    }
+
+    const rotated = this.blockSystem.rotatePreview90(axis);
+    if (!rotated) return false;
+
+    if (this.rotateGizmo) {
+      const updatedBlock = this.blockSystem.getCurrentPreviewBlock?.();
+      if (updatedBlock) {
+        this.rotateGizmo.syncToBlock(updatedBlock);
+        this.rotateGizmo.lockToAxis(axis);
+        this.rotateGizmo.setActiveAxis(axis);
+      }
+    }
+
+    return true;
+  }
+
+  applyRotationConfirm() {
+    if (!this.rotationModeActive || !this.selectedRotateAxis) return false;
+    return this.applyRotationInput(this.selectedRotateAxis);
+  }
+
+  syncRotationGizmo() {
+    if (!this.rotationModeActive || !this.rotateGizmo || !this.blockSystem) return;
+
+    const block = this.blockSystem.getCurrentPreviewBlock?.();
+    if (!block || this.blockSystem.state !== "EDIT") {
+      this.exitRotationMode();
+      return;
+    }
+
+    this.rotateGizmo.syncToBlock(block);
+    this.rotateGizmo.lockToAxis(this.selectedRotateAxis);
+    this.rotateGizmo.setActiveAxis(this.selectedRotateAxis);
+  }
 
   createNextPreviewUI() {
     let panel = document.getElementById("nextBlockPanel");
@@ -829,39 +835,39 @@ syncRotationGizmo() {
   }
 
   updateRotateButtonsLayout() {
-  if (!this.rotateButtonsPanel) return;
+    if (!this.rotateButtonsPanel) return;
 
-  const metrics = this.getResponsiveUiMetrics();
-  const isCompact = metrics.isMobile;
-  const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
+    const metrics = this.getResponsiveUiMetrics();
+    const isCompact = metrics.isMobile;
+    const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
 
-  const panelLeft = isLandscapeCompact ? 6 : isCompact ? 8 : 12;
-  const bottom = isLandscapeCompact ? 10 : isCompact ? 14 : 22;
+    const panelLeft = isLandscapeCompact ? 6 : isCompact ? 8 : 12;
+    const bottom = isLandscapeCompact ? 10 : isCompact ? 14 : 22;
 
-  const panelGap = isLandscapeCompact ? 3 : isCompact ? 5 : 8;
-  const panelPadding = isLandscapeCompact ? 4 : isCompact ? 5 : 8;
-  const panelRadius = isLandscapeCompact ? 10 : isCompact ? 11 : 14;
+    const panelGap = isLandscapeCompact ? 3 : isCompact ? 5 : 8;
+    const panelPadding = isLandscapeCompact ? 4 : isCompact ? 5 : 8;
+    const panelRadius = isLandscapeCompact ? 10 : isCompact ? 11 : 14;
 
-  const buttonWidth = isLandscapeCompact ? 42 : isCompact ? 50 : 68;
-  const buttonHeight = isLandscapeCompact ? 30 : isCompact ? 38 : 50;
+    const buttonWidth = isLandscapeCompact ? 42 : isCompact ? 50 : 68;
+    const buttonHeight = isLandscapeCompact ? 30 : isCompact ? 38 : 50;
 
-  this.rotateButtonsPanel.style.left = `${panelLeft}px`;
-  this.rotateButtonsPanel.style.bottom = `${bottom}px`;
-  this.rotateButtonsPanel.style.gap = `${panelGap}px`;
-  this.rotateButtonsPanel.style.padding = `${panelPadding}px`;
-  this.rotateButtonsPanel.style.borderRadius = `${panelRadius}px`;
+    this.rotateButtonsPanel.style.left = `${panelLeft}px`;
+    this.rotateButtonsPanel.style.bottom = `${bottom}px`;
+    this.rotateButtonsPanel.style.gap = `${panelGap}px`;
+    this.rotateButtonsPanel.style.padding = `${panelPadding}px`;
+    this.rotateButtonsPanel.style.borderRadius = `${panelRadius}px`;
 
-  for (const button of Object.values(this.rotateButtons)) {
-    if (!button) continue;
-    button.style.width = `${buttonWidth}px`;
-    button.style.height = `${buttonHeight}px`;
+    for (const button of Object.values(this.rotateButtons)) {
+      if (!button) continue;
+      button.style.width = `${buttonWidth}px`;
+      button.style.height = `${buttonHeight}px`;
 
-    const children = button.children;
-    if (children[0]) children[0].style.fontSize = isLandscapeCompact ? "9px" : isCompact ? "11px" : "13px";
-    if (children[1]) children[1].style.fontSize = isLandscapeCompact ? "7px" : isCompact ? "8px" : "10px";
-    if (children[2]) children[2].style.fontSize = isLandscapeCompact ? "6px" : isCompact ? "7px" : "9px";
+      const children = button.children;
+      if (children[0]) children[0].style.fontSize = isLandscapeCompact ? "9px" : isCompact ? "11px" : "13px";
+      if (children[1]) children[1].style.fontSize = isLandscapeCompact ? "7px" : isCompact ? "8px" : "10px";
+      if (children[2]) children[2].style.fontSize = isLandscapeCompact ? "6px" : isCompact ? "7px" : "9px";
+    }
   }
-}
 
   createMovePad() {
     let panel = document.getElementById("movePadPanel");
@@ -922,57 +928,58 @@ syncRotationGizmo() {
     this.updateMovePadUI();
   }
 
-updateMovePadLayout() {
-  if (!this.movePadPanel) return;
+  updateMovePadLayout() {
+    if (!this.movePadPanel) return;
 
-  const metrics = this.getResponsiveUiMetrics();
-  const isCompact = metrics.isMobile;
-  const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
+    const metrics = this.getResponsiveUiMetrics();
+    const isCompact = metrics.isMobile;
+    const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
 
-  const shortSide = Math.max(1, metrics.shortSide);
+    const shortSide = Math.max(1, metrics.shortSide);
 
-  const panelSize = isLandscapeCompact
-    ? THREE.MathUtils.clamp(shortSide * 0.18, 78, 98)
-    : isCompact
-    ? THREE.MathUtils.clamp(shortSide * 0.22, 88, 118)
-    : THREE.MathUtils.clamp(shortSide * 0.19, 132, 172);
-
-  const cellSize = isLandscapeCompact
-    ? THREE.MathUtils.clamp(panelSize * 0.27, 22, 28)
-    : isCompact
-    ? THREE.MathUtils.clamp(panelSize * 0.29, 26, 34)
-    : THREE.MathUtils.clamp(panelSize * 0.29, 36, 48);
-
-  const gap = isLandscapeCompact ? 3 : isCompact ? 4 : 6;
-  const padding = isLandscapeCompact ? 4 : isCompact ? 5 : 8;
-  const radius = isLandscapeCompact ? 11 : isCompact ? 13 : 16;
-
-  const right = isLandscapeCompact ? 6 : isCompact ? 8 : 18;
-  const bottom = isLandscapeCompact ? 10 : isCompact ? 14 : 22;
-
-  this.movePadPanel.style.left = "auto";
-  this.movePadPanel.style.right = `${right}px`;
-  this.movePadPanel.style.bottom = `${bottom}px`;
-  this.movePadPanel.style.width = `${Math.round(panelSize)}px`;
-  this.movePadPanel.style.height = `${Math.round(panelSize)}px`;
-  this.movePadPanel.style.gap = `${gap}px`;
-  this.movePadPanel.style.padding = `${padding}px`;
-  this.movePadPanel.style.borderRadius = `${radius}px`;
-
-  for (const btn of Object.values(this.moveButtons)) {
-    if (!btn) continue;
-    btn.style.width = `${Math.round(cellSize)}px`;
-    btn.style.height = `${Math.round(cellSize)}px`;
-    btn.style.fontSize = isLandscapeCompact
-      ? `${Math.round(cellSize * 0.4)}px`
+    const panelSize = isLandscapeCompact
+      ? THREE.MathUtils.clamp(shortSide * 0.18, 78, 98)
       : isCompact
-      ? `${Math.round(cellSize * 0.42)}px`
-      : `${Math.round(cellSize * 0.40)}px`;
-    btn.style.borderRadius = `${Math.max(9, Math.round(cellSize * 0.26))}px`;
-    btn.style.justifySelf = "center";
-    btn.style.alignSelf = "center";
+      ? THREE.MathUtils.clamp(shortSide * 0.22, 88, 118)
+      : THREE.MathUtils.clamp(shortSide * 0.19, 132, 172);
+
+    const cellSize = isLandscapeCompact
+      ? THREE.MathUtils.clamp(panelSize * 0.27, 22, 28)
+      : isCompact
+      ? THREE.MathUtils.clamp(panelSize * 0.29, 26, 34)
+      : THREE.MathUtils.clamp(panelSize * 0.29, 36, 48);
+
+    const gap = isLandscapeCompact ? 3 : isCompact ? 4 : 6;
+    const padding = isLandscapeCompact ? 4 : isCompact ? 5 : 8;
+    const radius = isLandscapeCompact ? 11 : isCompact ? 13 : 16;
+
+    const right = isLandscapeCompact ? 6 : isCompact ? 8 : 18;
+    const bottom = isLandscapeCompact ? 10 : isCompact ? 14 : 22;
+
+    this.movePadPanel.style.left = "auto";
+    this.movePadPanel.style.right = `${right}px`;
+    this.movePadPanel.style.bottom = `${bottom}px`;
+    this.movePadPanel.style.width = `${Math.round(panelSize)}px`;
+    this.movePadPanel.style.height = `${Math.round(panelSize)}px`;
+    this.movePadPanel.style.gap = `${gap}px`;
+    this.movePadPanel.style.padding = `${padding}px`;
+    this.movePadPanel.style.borderRadius = `${radius}px`;
+
+    for (const btn of Object.values(this.moveButtons)) {
+      if (!btn) continue;
+      btn.style.width = `${Math.round(cellSize)}px`;
+      btn.style.height = `${Math.round(cellSize)}px`;
+      btn.style.fontSize = isLandscapeCompact
+        ? `${Math.round(cellSize * 0.4)}px`
+        : isCompact
+        ? `${Math.round(cellSize * 0.42)}px`
+        : `${Math.round(cellSize * 0.40)}px`;
+      btn.style.borderRadius = `${Math.max(9, Math.round(cellSize * 0.26))}px`;
+      btn.style.justifySelf = "center";
+      btn.style.alignSelf = "center";
+    }
   }
-}
+
   createSettingsButton() {
     let button = document.getElementById("settingsButton");
 
@@ -1364,53 +1371,52 @@ updateMovePadLayout() {
   }
 
   updatePlacementGhost() {
-  if (!this.placementGuide || !this.blockSystem) return;
+    if (!this.placementGuide || !this.blockSystem) return;
 
-  const block = this.blockSystem.getCurrentPreviewBlock?.();
-  if (!block?.mesh || !this.blockSystem.getPlacementPrediction) {
-    this.placementGuide.hideProjection();
-    this.placementGuide.hidePredictionGhost();
-    return;
+    const block = this.blockSystem.getCurrentPreviewBlock?.();
+    if (!block?.mesh || !this.blockSystem.getPlacementPrediction) {
+      this.placementGuide.hideProjection();
+      this.placementGuide.hidePredictionGhost();
+      return;
+    }
+
+    const prediction = this.blockSystem.getPlacementPrediction();
+    if (!prediction?.position || !prediction?.quaternion) {
+      this.placementGuide.hideProjection();
+      this.placementGuide.hidePredictionGhost();
+      return;
+    }
+
+    const currentBottomY = prediction.currentBottomY ?? block.mesh.position.y;
+    const predictedBottomY = prediction.predictedBottomY ?? prediction.position.y;
+
+    const projectionStart = new THREE.Vector3(
+      block.mesh.position.x,
+      currentBottomY + 0.01,
+      block.mesh.position.z
+    );
+
+    const projectionEnd = new THREE.Vector3(
+      prediction.position.x,
+      predictedBottomY + 0.008,
+      prediction.position.z
+    );
+
+    this.placementGuide.setHeight(block.mesh.position.y);
+    this.placementGuide.show();
+
+    if (projectionEnd.y >= projectionStart.y - 0.002) {
+      this.placementGuide.hideProjection();
+    } else {
+      this.placementGuide.updateProjection(projectionStart, projectionEnd);
+    }
+
+    this.placementGuide.updatePredictionGhost(
+      block,
+      prediction.position,
+      prediction.quaternion
+    );
   }
-
-  const prediction = this.blockSystem.getPlacementPrediction();
-  if (!prediction?.position || !prediction?.quaternion) {
-    this.placementGuide.hideProjection();
-    this.placementGuide.hidePredictionGhost();
-    return;
-  }
-
-  const currentBottomY = prediction.currentBottomY ?? block.mesh.position.y;
-  const predictedBottomY = prediction.predictedBottomY ?? prediction.position.y;
-
-  const projectionStart = new THREE.Vector3(
-    block.mesh.position.x,
-    currentBottomY + 0.01,
-    block.mesh.position.z
-  );
-
-  const projectionEnd = new THREE.Vector3(
-    prediction.position.x,
-    predictedBottomY + 0.008,
-    prediction.position.z
-  );
-
-  this.placementGuide.setHeight(block.mesh.position.y);
-  this.placementGuide.show();
-
-  if (projectionEnd.y >= projectionStart.y - 0.002) {
-    this.placementGuide.hideProjection();
-  } else {
-    this.placementGuide.updateProjection(projectionStart, projectionEnd);
-  }
-
-  this.placementGuide.updatePredictionGhost(
-    block,
-    prediction.position,
-    prediction.quaternion
-  );
-}
-
 
   renderNextPreview() {
     if (!this.nextPreviewRenderer || !this.nextPreviewScene || !this.nextPreviewCamera) return;
@@ -1469,119 +1475,116 @@ updateMovePadLayout() {
     return result;
   }
 
-updateControlButton() {
-  if (!this.actionButton || !this.blockSystem) return;
+  updateControlButton() {
+    if (!this.actionButton || !this.blockSystem) return;
 
-  // ✨ 기본 (밝은 화이트)
-  const setBaseStyle = () => {
-    this.actionButton.style.opacity = "1";
-    this.actionButton.style.color = "#1a1a1a";
-    this.actionButton.style.background =
-      "linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(235,240,248,0.95) 100%)";
-    this.actionButton.style.border = "1px solid rgba(255,255,255,0.7)";
-    this.actionButton.style.boxShadow =
-      "0 10px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.9)";
-    this.actionButton.style.backdropFilter = "blur(10px)";
-  };
+    const setBaseStyle = () => {
+      this.actionButton.style.opacity = "1";
+      this.actionButton.style.color = "#1a1a1a";
+      this.actionButton.style.background =
+        "linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(235,240,248,0.95) 100%)";
+      this.actionButton.style.border = "1px solid rgba(255,255,255,0.7)";
+      this.actionButton.style.boxShadow =
+        "0 10px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.9)";
+      this.actionButton.style.backdropFilter = "blur(10px)";
+    };
 
-  // ✨ 누르고 있을 때 (강조)
-  const setHoldingStyle = () => {
-    this.actionButton.style.opacity = "1";
-    this.actionButton.style.color = "#0f1a2b";
-    this.actionButton.style.background =
-      "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(210,225,255,1) 100%)";
-    this.actionButton.style.boxShadow =
-      "0 14px 30px rgba(60,120,255,0.28), inset 0 1px 0 rgba(255,255,255,1)";
-  };
+    const setHoldingStyle = () => {
+      this.actionButton.style.opacity = "1";
+      this.actionButton.style.color = "#0f1a2b";
+      this.actionButton.style.background =
+        "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(210,225,255,1) 100%)";
+      this.actionButton.style.boxShadow =
+        "0 14px 30px rgba(60,120,255,0.28), inset 0 1px 0 rgba(255,255,255,1)";
+    };
 
-  // ✨ 비활성 (연한 화이트)
-  const setDisabledStyle = () => {
-    this.actionButton.style.opacity = "0.55";
-    this.actionButton.style.color = "#666";
-    this.actionButton.style.background =
-      "linear-gradient(180deg, rgba(245,245,245,0.9) 0%, rgba(220,220,220,0.9) 100%)";
-    this.actionButton.style.boxShadow =
-      "0 6px 14px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.6)";
-  };
+    const setDisabledStyle = () => {
+      this.actionButton.style.opacity = "0.55";
+      this.actionButton.style.color = "#666";
+      this.actionButton.style.background =
+        "linear-gradient(180deg, rgba(245,245,245,0.9) 0%, rgba(220,220,220,0.9) 100%)";
+      this.actionButton.style.boxShadow =
+        "0 6px 14px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.6)";
+    };
 
-  if (!this.isSessionStarted) {
-    this.actionButton.disabled = true;
-    this.actionButton.textContent = "시작 대기";
-    setDisabledStyle();
-    return;
-  }
+    if (!this.isSessionStarted) {
+      this.actionButton.disabled = true;
+      this.actionButton.textContent = "시작 대기";
+      setDisabledStyle();
+      return;
+    }
 
-  if (this.isGameOver || this.isRestarting) {
+    if (this.isGameOver || this.isRestarting) {
+      this.actionButton.disabled = true;
+      this.actionButton.textContent = "대기중";
+      setDisabledStyle();
+      return;
+    }
+
+    const hasPreview = !!this.blockSystem.getCurrentPreviewBlock();
+
+    if (hasPreview && this.blockSystem.state === "EDIT") {
+      this.actionButton.disabled = false;
+      this.actionButton.textContent = this.isActionHolding ? "가속 중" : "가속 낙하";
+
+      if (this.isActionHolding) {
+        setHoldingStyle();
+      } else {
+        setBaseStyle();
+      }
+      return;
+    }
+
+    if (this.blockSystem.state === "WAITING") {
+      this.actionButton.disabled = true;
+      this.actionButton.textContent = "착지중";
+      setDisabledStyle();
+      return;
+    }
+
     this.actionButton.disabled = true;
     this.actionButton.textContent = "대기중";
     setDisabledStyle();
-    return;
   }
-
-  const hasPreview = !!this.blockSystem.getCurrentPreviewBlock();
-
-  if (hasPreview && this.blockSystem.state === "EDIT") {
-    this.actionButton.disabled = false;
-    this.actionButton.textContent = this.isActionHolding ? "가속 중" : "가속 낙하";
-
-    if (this.isActionHolding) {
-      setHoldingStyle();
-    } else {
-      setBaseStyle();
-    }
-    return;
-  }
-
-  if (this.blockSystem.state === "WAITING") {
-    this.actionButton.disabled = true;
-    this.actionButton.textContent = "착지중";
-    setDisabledStyle();
-    return;
-  }
-
-  this.actionButton.disabled = true;
-  this.actionButton.textContent = "대기중";
-  setDisabledStyle();
-}
 
   updateRotateButtonsUI() {
-  const canRotate =
-    !!this.blockSystem &&
-    !!this.blockSystem.getCurrentPreviewBlock() &&
-    this.blockSystem.state === "EDIT" &&
-    !this.isGameOver &&
-    !this.isRestarting &&
-    this.isSessionStarted;
+    const canRotate =
+      !!this.blockSystem &&
+      !!this.blockSystem.getCurrentPreviewBlock() &&
+      this.blockSystem.state === "EDIT" &&
+      !this.isGameOver &&
+      !this.isRestarting &&
+      this.isSessionStarted;
 
-  if (!canRotate && this.rotationModeActive) {
-    this.exitRotationMode();
-    return;
+    if (!canRotate && this.rotationModeActive) {
+      this.exitRotationMode();
+      return;
+    }
+
+    if (this.rotateButtonsPanel) {
+      this.rotateButtonsPanel.style.opacity = canRotate ? "1" : "0.55";
+    }
+
+    for (const [axis, button] of Object.entries(this.rotateButtons)) {
+      if (!button) continue;
+
+      const isSelected =
+        canRotate &&
+        this.rotationModeActive &&
+        this.selectedRotateAxis === axis;
+
+      button.disabled = !canRotate;
+      button.style.cursor = canRotate ? "pointer" : "default";
+      button.style.opacity = canRotate ? "1" : "0.5";
+      button.style.background = isSelected
+        ? "rgba(255,255,255,0.24)"
+        : "rgba(255,255,255,0.14)";
+      button.style.boxShadow = isSelected
+        ? `0 0 0 1px ${this.axisColorMap[axis]} inset`
+        : "none";
+      button.style.transform = isSelected ? "translateY(-1px)" : "translateY(0)";
+    }
   }
-
-  if (this.rotateButtonsPanel) {
-    this.rotateButtonsPanel.style.opacity = canRotate ? "1" : "0.55";
-  }
-
-  for (const [axis, button] of Object.entries(this.rotateButtons)) {
-    if (!button) continue;
-
-    const isSelected =
-      canRotate &&
-      this.rotationModeActive &&
-      this.selectedRotateAxis === axis;
-
-    button.disabled = !canRotate;
-    button.style.cursor = canRotate ? "pointer" : "default";
-    button.style.opacity = canRotate ? "1" : "0.5";
-    button.style.background = isSelected
-      ? "rgba(255,255,255,0.24)"
-      : "rgba(255,255,255,0.14)";
-    button.style.boxShadow = isSelected
-      ? `0 0 0 1px ${this.axisColorMap[axis]} inset`
-      : "none";
-    button.style.transform = isSelected ? "translateY(-1px)" : "translateY(0)";
-  }
-}
 
   updateMovePadUI() {
     const canMove =
@@ -1627,73 +1630,73 @@ updateControlButton() {
     this.actionButton.style.zIndex = "28";
   }
 
-startActionHold() {
-  if (this.isActionHolding) return;
-  if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
-  if (!this.isSessionStarted) return;
-  if (!this.blockSystem.getCurrentPreviewBlock()) return;
-  if (this.blockSystem.state !== "EDIT") return;
+  startActionHold() {
+    if (this.isActionHolding) return;
+    if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
+    if (!this.isSessionStarted) return;
+    if (!this.blockSystem.getCurrentPreviewBlock()) return;
+    if (this.blockSystem.state !== "EDIT") return;
 
-  if (this.rotationModeActive) {
-    this.exitRotationMode();
+    if (this.rotationModeActive) {
+      this.exitRotationMode();
+    }
+
+    this.isActionHolding = true;
+    this.blockSystem.beginFastDropHold();
+
+    if (this.actionHoldTimeoutId) {
+      clearTimeout(this.actionHoldTimeoutId);
+      this.actionHoldTimeoutId = null;
+    }
+
+    this.updateControlButton();
   }
 
-  this.isActionHolding = true;
-  this.blockSystem.beginFastDropHold();
+  endActionHold(skipBlockReset = false) {
+    if (this.actionHoldTimeoutId) {
+      clearTimeout(this.actionHoldTimeoutId);
+      this.actionHoldTimeoutId = null;
+    }
 
-  if (this.actionHoldTimeoutId) {
-    clearTimeout(this.actionHoldTimeoutId);
-    this.actionHoldTimeoutId = null;
+    if (!skipBlockReset && this.blockSystem) {
+      this.blockSystem.endFastDropHold();
+    }
+
+    this.isActionHolding = false;
+    this.actionHoldTriggeredInstant = false;
+
+    this.updateControlButton();
+    this.updateRotateButtonsUI();
+    this.updateMovePadUI();
   }
 
-  this.updateControlButton();
-}
-
-endActionHold(skipBlockReset = false) {
-  if (this.actionHoldTimeoutId) {
-    clearTimeout(this.actionHoldTimeoutId);
-    this.actionHoldTimeoutId = null;
+  onActionButtonPointerDown(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.startActionHold();
   }
 
-  if (!skipBlockReset && this.blockSystem) {
-    this.blockSystem.endFastDropHold();
+  onActionButtonPointerUp(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.endActionHold();
   }
 
-  this.isActionHolding = false;
-  this.actionHoldTriggeredInstant = false;
+  onActionButtonPointerCancel(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.endActionHold();
+  }
 
-  this.updateControlButton();
-  this.updateRotateButtonsUI();
-  this.updateMovePadUI();
-}
+  onRotateStepButtonClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
 
-onActionButtonPointerDown(event) {
-  event.preventDefault();
-  event.stopPropagation();
-  this.startActionHold();
-}
+    const axis = event.currentTarget?.dataset?.axis;
+    if (!axis) return;
 
-onActionButtonPointerUp(event) {
-  event.preventDefault();
-  event.stopPropagation();
-  this.endActionHold();
-}
-
-onActionButtonPointerCancel(event) {
-  event.preventDefault();
-  event.stopPropagation();
-  this.endActionHold();
-}
-
-onRotateStepButtonClick(event) {
-  event.preventDefault();
-  event.stopPropagation();
-
-  const axis = event.currentTarget?.dataset?.axis;
-  if (!axis) return;
-
-  this.applyRotationInput(axis);
-}
+    this.applyRotationInput(axis);
+  }
 
   getCameraPlanarDirections() {
     const forward = new THREE.Vector3();
@@ -1728,39 +1731,39 @@ onRotateStepButtonClick(event) {
     };
   }
 
- movePreviewByDirection(dir) {
-  if (!this.blockSystem || !this.isSessionStarted) return false;
-  if (this.isGameOver || this.isRestarting) return false;
-  if (!this.blockSystem.getCurrentPreviewBlock()) return false;
-  if (this.blockSystem.state !== "EDIT") return false;
+  movePreviewByDirection(dir) {
+    if (!this.blockSystem || !this.isSessionStarted) return false;
+    if (this.isGameOver || this.isRestarting) return false;
+    if (!this.blockSystem.getCurrentPreviewBlock()) return false;
+    if (this.blockSystem.state !== "EDIT") return false;
 
-  if (this.rotationModeActive) {
-    this.exitRotationMode();
+    if (this.rotationModeActive) {
+      this.exitRotationMode();
+    }
+
+    const { forward, right } = this.getCameraPlanarDirections();
+
+    let dx = 0;
+    let dz = 0;
+
+    if (dir === "up") {
+      dx = forward.x;
+      dz = forward.z;
+    } else if (dir === "down") {
+      dx = -forward.x;
+      dz = -forward.z;
+    } else if (dir === "left") {
+      dx = -right.x;
+      dz = -right.z;
+    } else if (dir === "right") {
+      dx = right.x;
+      dz = right.z;
+    } else {
+      return false;
+    }
+
+    return this.blockSystem.movePreviewByGrid(dx, dz);
   }
-
-  const { forward, right } = this.getCameraPlanarDirections();
-
-  let dx = 0;
-  let dz = 0;
-
-  if (dir === "up") {
-    dx = forward.x;
-    dz = forward.z;
-  } else if (dir === "down") {
-    dx = -forward.x;
-    dz = -forward.z;
-  } else if (dir === "left") {
-    dx = -right.x;
-    dz = -right.z;
-  } else if (dir === "right") {
-    dx = right.x;
-    dz = right.z;
-  } else {
-    return false;
-  }
-
-  return this.blockSystem.movePreviewByGrid(dx, dz);
-}
 
   onMoveButtonClick(event) {
     event.preventDefault();
@@ -1770,75 +1773,76 @@ onRotateStepButtonClick(event) {
     this.movePreviewByDirection(dir);
   }
 
- onKeyDown(event) {
-  if (event.repeat) return;
-  if (!this.blockSystem) return;
+  onKeyDown(event) {
+    if (event.repeat) return;
+    if (!this.blockSystem) return;
 
-  const key = event.key.toLowerCase();
+    const key = event.key.toLowerCase();
 
-  if (!this.isSessionStarted) {
-    if (key === "enter" || key === " ") {
-      event.preventDefault();
-      this.onStartButtonClick();
+    if (!this.isSessionStarted) {
+      if (key === "enter" || key === " ") {
+        event.preventDefault();
+        this.onStartButtonClick();
+      }
+      return;
     }
-    return;
+
+    if (this.isGameOver || this.isRestarting) return;
+
+    if (key === "q") {
+      event.preventDefault();
+      this.applyRotationInput("x");
+      return;
+    }
+
+    if (key === "w") {
+      event.preventDefault();
+      this.applyRotationInput("y");
+      return;
+    }
+
+    if (key === "e") {
+      event.preventDefault();
+      this.applyRotationInput("z");
+      return;
+    }
+
+    if (key === "r") {
+      event.preventDefault();
+      this.applyRotationConfirm();
+      return;
+    }
+
+    if (key === "arrowup") {
+      event.preventDefault();
+      this.movePreviewByDirection("up");
+      return;
+    }
+
+    if (key === "arrowdown") {
+      event.preventDefault();
+      this.movePreviewByDirection("down");
+      return;
+    }
+
+    if (key === "arrowleft") {
+      event.preventDefault();
+      this.movePreviewByDirection("left");
+      return;
+    }
+
+    if (key === "arrowright") {
+      event.preventDefault();
+      this.movePreviewByDirection("right");
+      return;
+    }
+
+    if (key === " " || key === "enter") {
+      event.preventDefault();
+      this.startActionHold();
+    }
   }
 
-  if (this.isGameOver || this.isRestarting) return;
-
-  if (key === "q") {
-    event.preventDefault();
-    this.applyRotationInput("x");
-    return;
-  }
-
-  if (key === "w") {
-    event.preventDefault();
-    this.applyRotationInput("y");
-    return;
-  }
-
-  if (key === "e") {
-    event.preventDefault();
-    this.applyRotationInput("z");
-    return;
-  }
-
-  if (key === "r") {
-    event.preventDefault();
-    this.applyRotationConfirm();
-    return;
-  }
-
-  if (key === "arrowup") {
-    event.preventDefault();
-    this.movePreviewByDirection("up");
-    return;
-  }
-
-  if (key === "arrowdown") {
-    event.preventDefault();
-    this.movePreviewByDirection("down");
-    return;
-  }
-
-  if (key === "arrowleft") {
-    event.preventDefault();
-    this.movePreviewByDirection("left");
-    return;
-  }
-
-  if (key === "arrowright") {
-    event.preventDefault();
-    this.movePreviewByDirection("right");
-    return;
-  }
-
-  if (key === " " || key === "enter") {
-    event.preventDefault();
-    this.startActionHold();
-  }
-}
   onResize() {
     if (this.renderer.resize) {
       this.renderer.resize(window.innerWidth, window.innerHeight);
@@ -1848,31 +1852,31 @@ onRotateStepButtonClick(event) {
   }
 
   onKeyUp(event) {
-  const key = event.key.toLowerCase();
+    const key = event.key.toLowerCase();
 
-  if (key === " " || key === "enter") {
-    event.preventDefault();
-    this.endActionHold();
+    if (key === " " || key === "enter") {
+      event.preventDefault();
+      this.endActionHold();
+    }
   }
-}
 
-async onStartButtonClick() {
-  if (!this.isStartOverlayReady) return;
-  if (this.isSessionStarted) return;
-  if (!this.blockSystem) return;
+  async onStartButtonClick() {
+    if (!this.isStartOverlayReady) return;
+    if (this.isSessionStarted) return;
+    if (!this.blockSystem) return;
 
-  this.isSessionStarted = true;
-  this.blockSystem.setGameStarted(true);
-  this.updateStartOverlayLayout();
+    this.isSessionStarted = true;
+    this.blockSystem.setGameStarted(true);
+    this.updateStartOverlayLayout();
 
-  await this.blockSystem.getNextBlockInfo();
-  await this.blockSystem.createBlock();
-  await this.updateNextPreviewUI();
+    await this.blockSystem.getNextBlockInfo();
+    await this.blockSystem.createBlock();
+    await this.updateNextPreviewUI();
 
-  this.updateControlButton();
-  this.updateRotateButtonsUI();
-  this.updateMovePadUI();
-}
+    this.updateControlButton();
+    this.updateRotateButtonsUI();
+    this.updateMovePadUI();
+  }
 
   async handleFail() {
     if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
@@ -1927,8 +1931,8 @@ async onStartButtonClick() {
     this.isRestarting = true;
     this.endActionHold();
     this.blockSystem.reset();
-        this.exitRotationMode();
-        this.placementGuide?.hide();
+    this.exitRotationMode();
+    this.placementGuide?.hide();
     this.blockSystem.setGameStarted(false);
 
     this.renderer.resetCamera();
@@ -2067,7 +2071,7 @@ async onStartButtonClick() {
       await this.updateNextPreviewUI();
       await this.refreshLeaderboardUI(true);
 
-    window.addEventListener("resize", this.onResize);
+      window.addEventListener("resize", this.onResize);
       window.addEventListener("keydown", this.onKeyDown);
       window.addEventListener("keyup", this.onKeyUp);
 
@@ -2149,12 +2153,12 @@ async onStartButtonClick() {
 
     this.lastTime = time;
 
-       if (!this.isGameOver && !this.isRestarting && this.blockSystem) {
+    if (!this.isGameOver && !this.isRestarting && this.blockSystem) {
       this.physics.step();
       this.blockSystem.update(dt);
 
       this.triggerLandingEffects();
-            this.syncRotationGizmo();
+      this.syncRotationGizmo();
       this.updatePlacementGhost();
 
       const followHeight = this.blockSystem.getMaxHeight();
@@ -2166,7 +2170,7 @@ async onStartButtonClick() {
       this.updateMovePadUI();
       await this.updateNextPreviewUI();
     }
-    
+
     if (this.renderer.update) {
       this.renderer.update(dt);
     }
