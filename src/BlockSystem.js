@@ -34,9 +34,6 @@ export class BlockSystem {
     this.peakStableHeight = 0;
     this.heightStep = options.heightStep ?? 0.5;
 
-    this.lastRotateInputTime = 0;
-this.rotateSlowLandingWindowMs = 300; // 👈 0.3초
-
     this.previewX = 0;
     this.previewY = 0;
     this.previewZ = 0;
@@ -59,9 +56,12 @@ this.rotateSlowLandingWindowMs = 300; // 👈 0.3초
     this.predictionCoarsePos = new THREE.Vector3();
 
     this.isPreviewRotating = false;
-    this.previewRotateSlowLandingUntil = 0;
+    this.lastRotateInputTime = 0;
+    this.rotateSlowLandingWindowMs = options.rotateSlowLandingWindowMs ?? 300;
     this.rotateFallMultiplier = options.rotateFallMultiplier ?? 0.18;
-    this.rotateSlowLandingGraceMs = options.rotateSlowLandingGraceMs ?? 240;
+
+    this.landingMoveWindowMs = options.landingMoveWindowMs ?? 380;
+    this.landingRotateWindowMs = options.landingRotateWindowMs ?? 420;
 
     this.factory = new BlockFactory(scene, physics, {
       blockSize: this.blockSize,
@@ -78,10 +78,11 @@ this.rotateSlowLandingWindowMs = 300; // 👈 0.3초
       contactVerticalThreshold: 0.32,
       contactHorizontalThreshold: 0.26,
       contactFramesRequired: 2,
-      landingMinFrames: 4,
-      landingStableFramesRequired: 4,
+      landingMinFrames: 6,
+      landingStableFramesRequired: 7,
       maxLandingYDelta: 0.02,
-      maxLandingTime: 5.0,
+      maxLandingTime: 5.5,
+      landingLockDelay: 0.34,
       largeMoveLinearThreshold: 0.9,
       largeMoveAngularThreshold: 0.9,
       jitterLinearMin: 0.02,
@@ -100,26 +101,21 @@ this.rotateSlowLandingWindowMs = 300; // 👈 0.3초
     this.gameStarted = !!started;
   }
 
-setPreviewRotating(rotating) {
-  this.isPreviewRotating = !!rotating;
+  setPreviewRotating(rotating) {
+    this.isPreviewRotating = !!rotating;
 
-  if (rotating) {
-    this.lastRotateInputTime = performance.now();
-  }
-}
-isSlowLandingMode() {
-  const now = performance.now();
-
-
-  // 마지막 회전 입력 이후 0.3초 동안만 slow
-  return now - this.lastRotateInputTime < this.rotateSlowLandingWindowMs;
-}
-  getPreviewFallSpeedMultiplier() {
-    if (this.isSlowLandingMode()) {
-      return this.rotateFallMultiplier;
+    if (rotating) {
+      this.lastRotateInputTime = performance.now();
     }
+  }
 
-    return 1;
+  isSlowLandingMode() {
+    const now = performance.now();
+    return now - this.lastRotateInputTime < this.rotateSlowLandingWindowMs;
+  }
+
+  getPreviewFallSpeedMultiplier() {
+    return this.isSlowLandingMode() ? this.rotateFallMultiplier : 1;
   }
 
   getGridStep() {
@@ -150,6 +146,11 @@ isSlowLandingMode() {
     };
   }
 
+  clampGridPositionToStage(position) {
+    const clamped = this.clampPreviewPosition(position.x, position.z);
+    return new THREE.Vector3(clamped.x, position.y, clamped.z);
+  }
+
   getCurrentPreviewBlock() {
     if (!this.currentBlock) return null;
     if (this.currentBlock.state !== "preview") return null;
@@ -164,12 +165,47 @@ isSlowLandingMode() {
     return this.previewQuaternion.clone();
   }
 
+  getLastCommittedLandingBlock() {
+    const block = this.blocks.find((b) => b.id === this.lastCommittedBlockId);
+    if (!block) return null;
+    if (block.state !== "landing") return null;
+    return block;
+  }
+
+  canManipulateLandingBlock(block, action = "move") {
+    if (!block || block.state !== "landing") return false;
+
+    const now = performance.now();
+    const startTime = block.landingStartTime ?? now;
+    const elapsedMs = now - startTime;
+
+    if (action === "rotate") {
+      return elapsedMs <= this.landingRotateWindowMs;
+    }
+
+    return elapsedMs <= this.landingMoveWindowMs;
+  }
+
+  refreshLandingBlockState(block, positionY = null) {
+    const pos = block.body.translation();
+    const nextY = positionY ?? pos.y;
+
+    block.state = "landing";
+    block.contactFrames = 0;
+    block.landingFrames = 0;
+    block.stableFrames = 0;
+    block.jitterFrames = 0;
+    block.landingStartTime = performance.now();
+    block.landingStartY = nextY;
+    block.prevPosForJitter = { x: pos.x, y: nextY, z: pos.z };
+  }
+
   async createBlock() {
     if (!this.gameStarted) return;
     if (this.currentBlock) return;
     if (this.isSpawning) return;
     if (this.state === "WAITING") return;
-this.lastRotateInputTime = 0;
+
     this.isSpawning = true;
 
     try {
@@ -182,7 +218,7 @@ this.lastRotateInputTime = 0;
       this.previewQuaternion.identity();
       this.previewFallMultiplier = 1;
       this.isPreviewRotating = false;
-      this.previewRotateSlowLandingUntil = 0;
+      this.lastRotateInputTime = 0;
 
       this.currentBlock = block;
       this.blocks.push(block);
@@ -281,6 +317,44 @@ this.lastRotateInputTime = 0;
     );
   }
 
+  tryMoveLandingBlockByGrid(dx, dz) {
+    const block = this.getLastCommittedLandingBlock();
+    if (!block) return false;
+    if (!this.canManipulateLandingBlock(block, "move")) return false;
+
+    const pos = block.body.translation();
+    const rot = block.body.rotation();
+
+    const currentPosition = new THREE.Vector3(pos.x, pos.y, pos.z);
+    const currentQuaternion = new THREE.Quaternion(rot.x, rot.y, rot.z, rot.w);
+
+    const targetPosition = this.clampGridPositionToStage(
+      new THREE.Vector3(
+        this.snapToGrid(currentPosition.x + dx),
+        currentPosition.y,
+        this.snapToGrid(currentPosition.z + dz)
+      )
+    );
+
+    if (this.collidesShapeAt(targetPosition, currentQuaternion, block.collision, block)) {
+      return false;
+    }
+
+    block.body.setTranslation(
+      {
+        x: targetPosition.x,
+        y: targetPosition.y,
+        z: targetPosition.z,
+      },
+      true
+    );
+    block.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    block.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+
+    this.refreshLandingBlockState(block, targetPosition.y);
+    return true;
+  }
+
   rotatePreviewByAxis(axis, angle) {
     if (!this.currentBlock || this.currentBlock.state !== "preview") return false;
     if (this.state !== "EDIT") return false;
@@ -304,15 +378,17 @@ this.lastRotateInputTime = 0;
 
     const testPosition = new THREE.Vector3(this.previewX, this.previewY, this.previewZ);
 
-    if (this.collidesShapeAt(testPosition, nextQuaternion, shapeData, block)) {
+    const assisted = this.findSpinAssistPlacement(block, testPosition, nextQuaternion);
+    if (!assisted) {
       return false;
     }
 
-    this.previewQuaternion.copy(nextQuaternion);
-    this.previewRotateSlowLandingUntil =
-      performance.now() + this.rotateSlowLandingGraceMs;
+    this.previewX = assisted.position.x;
+    this.previewY = assisted.position.y;
+    this.previewZ = assisted.position.z;
+    this.previewQuaternion.copy(assisted.quaternion);
+    this.lastRotateInputTime = performance.now();
 
-this.lastRotateInputTime = performance.now();
     this.applyPreviewTransform();
     return true;
   }
@@ -321,6 +397,109 @@ this.lastRotateInputTime = performance.now();
     const normalizedTurns = Math.trunc(turns);
     if (!normalizedTurns) return false;
     return this.rotatePreviewByAxis(axis, (Math.PI / 2) * normalizedTurns);
+  }
+
+  tryRotateLandingBlock90(axis, turns = 1) {
+    const block = this.getLastCommittedLandingBlock();
+    if (!block) return false;
+    if (!this.canManipulateLandingBlock(block, "rotate")) return false;
+
+    const normalizedTurns = Math.trunc(turns);
+    if (!normalizedTurns) return false;
+
+    const pos = block.body.translation();
+    const rot = block.body.rotation();
+
+    const currentPosition = new THREE.Vector3(pos.x, pos.y, pos.z);
+    const currentQuaternion = new THREE.Quaternion(rot.x, rot.y, rot.z, rot.w);
+
+    if (axis === "x") this.tempAxis.set(1, 0, 0);
+    else if (axis === "y") this.tempAxis.set(0, 1, 0);
+    else if (axis === "z") this.tempAxis.set(0, 0, 1);
+    else return false;
+
+    this.tempAxis.applyQuaternion(currentQuaternion).normalize();
+    this.deltaQuaternion.setFromAxisAngle(
+      this.tempAxis,
+      (Math.PI / 2) * normalizedTurns
+    );
+
+    const rotatedQuaternion = this.deltaQuaternion
+      .clone()
+      .multiply(currentQuaternion)
+      .normalize();
+
+    const assisted = this.findSpinAssistPlacement(
+      block,
+      currentPosition,
+      rotatedQuaternion
+    );
+
+    if (!assisted) return false;
+
+    block.body.setRotation(assisted.quaternion, true);
+    block.body.setTranslation(
+      {
+        x: assisted.position.x,
+        y: assisted.position.y,
+        z: assisted.position.z,
+      },
+      true
+    );
+    block.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    block.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+
+    this.refreshLandingBlockState(block, assisted.position.y);
+    this.lastRotateInputTime = performance.now();
+    return true;
+  }
+
+  findSpinAssistPlacement(block, basePosition, rotatedQuaternion) {
+    const halfStep = this.gridStep * 0.5;
+
+    const candidates = [
+      new THREE.Vector3(0, 0, 0),
+
+      new THREE.Vector3(this.gridStep, 0, 0),
+      new THREE.Vector3(-this.gridStep, 0, 0),
+      new THREE.Vector3(0, 0, this.gridStep),
+      new THREE.Vector3(0, 0, -this.gridStep),
+
+      new THREE.Vector3(halfStep, 0, 0),
+      new THREE.Vector3(-halfStep, 0, 0),
+      new THREE.Vector3(0, 0, halfStep),
+      new THREE.Vector3(0, 0, -halfStep),
+
+      new THREE.Vector3(this.gridStep, -0.18, 0),
+      new THREE.Vector3(-this.gridStep, -0.18, 0),
+      new THREE.Vector3(0, -0.18, this.gridStep),
+      new THREE.Vector3(0, -0.18, -this.gridStep),
+
+      new THREE.Vector3(halfStep, -0.18, 0),
+      new THREE.Vector3(-halfStep, -0.18, 0),
+      new THREE.Vector3(0, -0.18, halfStep),
+      new THREE.Vector3(0, -0.18, -halfStep),
+
+      new THREE.Vector3(0, -0.3, 0),
+      new THREE.Vector3(0, -0.42, 0),
+    ];
+
+    for (const offset of candidates) {
+      const testPosition = basePosition.clone().add(offset);
+      testPosition.x = this.snapToGrid(testPosition.x);
+      testPosition.z = this.snapToGrid(testPosition.z);
+
+      const clamped = this.clampGridPositionToStage(testPosition);
+
+      if (!this.collidesShapeAt(clamped, rotatedQuaternion, block.collision, block)) {
+        return {
+          position: clamped,
+          quaternion: rotatedQuaternion.clone(),
+        };
+      }
+    }
+
+    return null;
   }
 
   beginFastDropHold() {
@@ -342,7 +521,7 @@ this.lastRotateInputTime = performance.now();
     if (this.state !== "EDIT") return false;
 
     const block = this.currentBlock;
-this.lastRotateInputTime = 0;
+
     this.factory.convertPreviewToDynamic(block, this.fastFallSpeed);
     block.committed = true;
     this.lastCommittedBlockId = block.id;
@@ -350,7 +529,7 @@ this.lastRotateInputTime = 0;
     this.currentBlock = null;
     this.previewFallMultiplier = 1;
     this.isPreviewRotating = false;
-    this.previewRotateSlowLandingUntil = 0;
+    this.lastRotateInputTime = 0;
     this.state = "WAITING";
     return true;
   }
@@ -361,7 +540,7 @@ this.lastRotateInputTime = 0;
     if (this.state !== "EDIT") return false;
 
     const block = this.currentBlock;
-this.lastRotateInputTime = 0;
+
     this.factory.convertPreviewToDynamic(block, this.slowFallSpeed);
     block.committed = true;
     this.lastCommittedBlockId = block.id;
@@ -369,7 +548,7 @@ this.lastRotateInputTime = 0;
     this.currentBlock = null;
     this.previewFallMultiplier = 1;
     this.isPreviewRotating = false;
-    this.previewRotateSlowLandingUntil = 0;
+    this.lastRotateInputTime = 0;
     this.state = "WAITING";
     return true;
   }
@@ -712,7 +891,7 @@ this.lastRotateInputTime = 0;
     this.blocks = [];
     this.currentBlock = null;
     this.state = "IDLE";
-this.lastRotateInputTime = 0;
+
     this.liveHeight = 0;
     this.stableHeight = 0;
     this.peakStableHeight = 0;
@@ -724,7 +903,7 @@ this.lastRotateInputTime = 0;
     this.previewFallMultiplier = 1;
 
     this.isPreviewRotating = false;
-    this.previewRotateSlowLandingUntil = 0;
+    this.lastRotateInputTime = 0;
 
     this.waitingBlockId = 1;
     this.lastCommittedBlockId = 0;

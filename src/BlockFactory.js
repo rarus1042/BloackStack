@@ -218,7 +218,10 @@ export class BlockFactory {
 
   buildShapeData(entry) {
   const halfExtent = this.cellSize / 2;
-  const colliderHalfExtent = halfExtent * 0.94;
+
+  // 기존 0.94보다 조금 더 줄여서
+  // 보이는 블럭보다 살짝 작게 충돌하게 만듦
+  const colliderHalfExtent = halfExtent * 0.90;
 
   const rawCellOffsets = entry.cells.map(([x, y, z]) => ({
     x: x * this.cellSize,
@@ -248,7 +251,6 @@ export class BlockFactory {
     z: (centerMinZ + centerMaxZ) * 0.5,
   };
 
-  // 전체 블럭 중심에 가장 가까운 "실제 셀 중심"을 앵커로 선택
   let anchor = rawCellOffsets[0];
   let bestDist2 = Infinity;
   let bestTie = Infinity;
@@ -260,10 +262,6 @@ export class BlockFactory {
 
     const dist2 = dx * dx + dy * dy + dz * dz;
 
-    // tie-break:
-    // 1) y 중심에 가까운 셀
-    // 2) x 중심에 가까운 셀
-    // 3) z 중심에 가까운 셀
     const tie =
       Math.abs(dy) * 10000 +
       Math.abs(dx) * 100 +
@@ -279,7 +277,6 @@ export class BlockFactory {
     }
   }
 
-  // 선택된 셀 중심이 원점(스폰포인트)에 오도록 보정
   const cellOffsets = rawCellOffsets.map((c) => ({
     x: c.x - anchor.x,
     y: c.y - anchor.y,

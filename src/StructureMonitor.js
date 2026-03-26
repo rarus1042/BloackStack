@@ -3,7 +3,7 @@ export class StructureMonitor {
     this.stageSize = options.stageSize ?? 5;
     this.stageHalf = this.stageSize / 2;
     this.failY = options.failY ?? -3;
-    this.failGraceTime = options.failGraceTime ?? 1.5; // 초
+    this.failGraceTime = options.failGraceTime ?? 2; // 초
     this.failCandidateSince = null;
 
     this.contactVerticalThreshold = options.contactVerticalThreshold ?? 0.32;
@@ -14,6 +14,7 @@ export class StructureMonitor {
     this.landingStableFramesRequired = options.landingStableFramesRequired ?? 4;
     this.maxLandingYDelta = options.maxLandingYDelta ?? 0.02;
     this.maxLandingTime = options.maxLandingTime ?? 5.0;
+    this.landingLockDelay = options.landingLockDelay ?? 0.34;
 
     this.largeMoveLinearThreshold = options.largeMoveLinearThreshold ?? 0.9;
     this.largeMoveAngularThreshold = options.largeMoveAngularThreshold ?? 0.9;
@@ -57,6 +58,18 @@ export class StructureMonitor {
     block.prevPosForJitter = null;
   }
 
+  refreshLandingWindow(block) {
+    const pos = block.body.translation();
+    block.state = "landing";
+    block.contactFrames = 0;
+    block.landingFrames = 0;
+    block.stableFrames = 0;
+    block.jitterFrames = 0;
+    block.landingStartY = pos.y;
+    block.landingStartTime = performance.now();
+    block.prevPosForJitter = { x: pos.x, y: pos.y, z: pos.z };
+  }
+
   updateDynamicBlocks(blocks, options = {}) {
     const now = performance.now();
     const slowLanding = !!options.slowLanding;
@@ -84,6 +97,10 @@ export class StructureMonitor {
     const maxLandingTime = slowLanding
       ? Math.max(this.maxLandingTime, 7.5)
       : this.maxLandingTime;
+
+    const landingLockDelay = slowLanding
+      ? Math.max(this.landingLockDelay, 0.42)
+      : this.landingLockDelay;
 
     for (const block of blocks) {
       if (
@@ -208,13 +225,14 @@ export class StructureMonitor {
         }
 
         const landingElapsedSec = (now - (block.landingStartTime ?? now)) / 1000;
+        const isLockDelayActive = landingElapsedSec < landingLockDelay;
 
-        if (block.stableFrames >= landingStableFramesRequired) {
+        if (!isLockDelayActive && block.stableFrames >= landingStableFramesRequired) {
           this.forceSettle(block);
           continue;
         }
 
-        if ((block.jitterFrames ?? 0) >= this.jitterFramesRequired) {
+        if (!isLockDelayActive && (block.jitterFrames ?? 0) >= this.jitterFramesRequired) {
           this.forceSettle(block);
           continue;
         }

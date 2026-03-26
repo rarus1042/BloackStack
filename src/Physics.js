@@ -7,8 +7,11 @@ export class Physics {
     this.groundBody = null;
     this.groundCollider = null;
 
-    this.stageSize = options.stageSize ?? 6;
+    this.stageSize = options.stageSize ?? 10;
     this.groundHeight = options.groundHeight ?? 0.12;
+
+    // 바닥 충돌체는 아주 살짝만 축소
+    this.groundColliderScale = options.groundColliderScale ?? 0.985;
   }
 
   async init() {
@@ -31,15 +34,17 @@ export class Physics {
   setupGround() {
     const halfGroundHeight = this.groundHeight / 2;
     const halfExtent = this.stageSize / 2;
+    const groundHalfX = halfExtent * this.groundColliderScale;
+    const groundHalfZ = halfExtent * this.groundColliderScale;
 
     this.groundBody = this.world.createRigidBody(
       this.RAPIER.RigidBodyDesc.fixed().setTranslation(0, -halfGroundHeight, 0)
     );
 
     const colDesc = this.RAPIER.ColliderDesc.cuboid(
-      halfExtent,
+      groundHalfX,
       halfGroundHeight,
-      halfExtent
+      groundHalfZ
     )
       .setFriction(2.25)
       .setRestitution(0.0)
