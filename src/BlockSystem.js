@@ -60,7 +60,16 @@ this.settleGapSlack = options.settleGapSlack ?? 0.12;
 this.settleSnapHorizontalTolerance = options.settleSnapHorizontalTolerance ?? 0.38;
 this.settleSnapRotationDotMin = options.settleSnapRotationDotMin ?? 0.9;
 this.settleSupportBias = options.settleSupportBias ?? 0.16;
+
+// 추가
+this.settleSnapPositionStrength = options.settleSnapPositionStrength ?? 0.35;
+this.settleSnapRotationStrength = options.settleSnapRotationStrength ?? 0.45;
+this.settleSnapLinearVelocityKeep = options.settleSnapLinearVelocityKeep ?? 0.08;
+this.settleSnapAngularVelocityKeep = options.settleSnapAngularVelocityKeep ?? 0.18;
+this.settleSnapMaxVerticalSpeed = options.settleSnapMaxVerticalSpeed ?? 0.0025;
+
 this.snapQuaternions = this.buildRightAngleQuaternionSet();
+
 
     this.isPreviewRotating = false;
     this.lastRotateInputTime = 0;
@@ -1044,10 +1053,16 @@ applySettleSnap(block) {
   const rotRaw = block.body.rotation();
 
   const currentPosition = new THREE.Vector3(posRaw.x, posRaw.y, posRaw.z);
-  const currentQuaternion = new THREE.Quaternion(rotRaw.x, rotRaw.y, rotRaw.z, rotRaw.w);
+  const currentQuaternion = new THREE.Quaternion(
+    rotRaw.x,
+    rotRaw.y,
+    rotRaw.z,
+    rotRaw.w
+  );
 
   const snappedRotation = this.getNearestRightAngleQuaternion(currentQuaternion);
   const snapQuaternion = snappedRotation.quaternion;
+
   const snapPosition = this.clampGridPositionToStage(
     new THREE.Vector3(
       this.snapToGrid(currentPosition.x),
@@ -1078,37 +1093,65 @@ applySettleSnap(block) {
     return false;
   }
 
-  block.body.setRotation(snapQuaternion, true);
+  const positionStrength = THREE.MathUtils.clamp(
+    this.settleSnapPositionStrength ?? 0.35,
+    0,
+    1
+  );
+  const rotationStrength = THREE.MathUtils.clamp(
+    this.settleSnapRotationStrength ?? 0.45,
+    0,
+    1
+  );
+
+  const blendedPosition = currentPosition.clone().lerp(snapPosition, positionStrength);
+  const blendedQuaternion = currentQuaternion
+    .clone()
+    .slerp(snapQuaternion, rotationStrength)
+    .normalize();
+
+  block.body.setRotation(blendedQuaternion, true);
   block.body.setTranslation(
     {
-      x: snapPosition.x,
-      y: snapPosition.y,
-      z: snapPosition.z,
+      x: blendedPosition.x,
+      y: blendedPosition.y,
+      z: blendedPosition.z,
     },
     true
   );
+
   const lv = block.body.linvel();
   const av = block.body.angvel();
 
+  const linearKeep = THREE.MathUtils.clamp(
+    this.settleSnapLinearVelocityKeep ?? 0.08,
+    0,
+    1
+  );
+  const angularKeep = THREE.MathUtils.clamp(
+    this.settleSnapAngularVelocityKeep ?? 0.18,
+    0,
+    1
+  );
+  const maxVerticalSpeed = this.settleSnapMaxVerticalSpeed ?? 0.0025;
+
   block.body.setLinvel(
     {
-      x: lv.x * 0.25,
-      y: Math.max(-0.005, Math.min(0.005, lv.y * 0.1)),
-      z: lv.z * 0.25,
+      x: lv.x * linearKeep,
+      y: Math.max(-maxVerticalSpeed, Math.min(maxVerticalSpeed, lv.y * 0.04)),
+      z: lv.z * linearKeep,
     },
     true
   );
 
   block.body.setAngvel(
     {
-      x: av.x * 0.5,
-      y: av.y * 0.5,
-      z: av.z * 0.5,
+      x: av.x * angularKeep,
+      y: av.y * angularKeep,
+      z: av.z * angularKeep,
     },
     true
   );
-
-  // 즉시 sleep 금지
 
   block.snapApplied = true;
   block.snapIntent = {
