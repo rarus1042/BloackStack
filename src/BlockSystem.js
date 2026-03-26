@@ -25,8 +25,8 @@ export class BlockSystem {
     this.fastFallSpeed = options.fastFallSpeed ?? 5.5;
     this.previewFallMultiplier = 1;
 
-    this.spawnClearance = options.spawnClearance ?? 20.0;
-    this.minSpawnHeight = options.minSpawnHeight ?? 20.0;
+    this.spawnClearance = options.spawnClearance ?? 30.0;
+    this.minSpawnHeight = options.minSpawnHeight ?? 30.0;
     this.previewClampPadding = options.previewClampPadding ?? 0.4;
 
     this.liveHeight = 0;
@@ -594,7 +594,7 @@ getShapeHalfExtent(shapeData, mode = "collision") {
     if (this.currentBlock.state !== "preview") return false;
     if (this.state !== "EDIT") return false;
 
-    this.previewFallMultiplier = 8;
+    this.previewFallMultiplier = 10;
     return true;
   }
 
@@ -1325,6 +1325,63 @@ update(dt = 0.016) {
 
     this.waitingBlockId = 1;
     this.lastCommittedBlockId = 0;
+  }
+
+    getStructureBounds(includePreview = false) {
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+
+    let found = false;
+
+    for (const block of this.blocks) {
+      if (!block) continue;
+      if (!includePreview && block.state === "preview") continue;
+      if (!block.collision?.cellOffsets?.length) continue;
+
+      const posRaw = block.body.translation();
+      const rotRaw = block.body.rotation();
+
+      const position = new THREE.Vector3(posRaw.x, posRaw.y, posRaw.z);
+      const quaternion = new THREE.Quaternion(
+        rotRaw.x,
+        rotRaw.y,
+        rotRaw.z,
+        rotRaw.w
+      );
+
+      const half = this.getShapeHalfExtent(block.collision, "settle");
+      const cells = this.getWorldCellCenters(position, quaternion, block.collision);
+
+      for (const cell of cells) {
+        min.x = Math.min(min.x, cell.x - half);
+        min.y = Math.min(min.y, cell.y - half);
+        min.z = Math.min(min.z, cell.z - half);
+
+        max.x = Math.max(max.x, cell.x + half);
+        max.y = Math.max(max.y, cell.y + half);
+        max.z = Math.max(max.z, cell.z + half);
+
+        found = true;
+      }
+    }
+
+    if (!found) {
+      return {
+        min: new THREE.Vector3(-1, 0, -1),
+        max: new THREE.Vector3(1, 2, 1),
+        center: new THREE.Vector3(0, 1, 0),
+      };
+    }
+
+    return {
+      min,
+      max,
+      center: new THREE.Vector3(
+        (min.x + max.x) * 0.5,
+        (min.y + max.y) * 0.5,
+        (min.z + max.z) * 0.5
+      ),
+    };
   }
 
   getMaxHeight() {

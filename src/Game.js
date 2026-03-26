@@ -9,18 +9,18 @@ import { GizmoController } from "./GizmoController.js";
 export class Game {
   constructor() {
     this.config = {
-      stageSize: 10,
+      stageSize: 16,
       groundHeight: 0.01,
       stageThickness: 0.16,
       blockSize: 1,
       gridStep: 1,
       previewClampPadding: 0.55,
 
-      slowFallSpeed: 1.0,
+      slowFallSpeed: 0.75,
       fastFallSpeed: 4.0,
 
-      spawnClearance: 10.4,
-      minSpawnHeight: 8.0,
+      spawnClearance: 12.0,
+      minSpawnHeight: 12.0,
 
       heightStep: 0.5,
 
@@ -45,6 +45,9 @@ export class Game {
       stageSize: this.config.stageSize,
       padding: this.config.previewClampPadding ?? 0.35,
     });
+
+        this.isFailureCinematicActive = false;
+    this.failureCinematicEndTime = 0;
 
     this.nickname = "Player";
     this.bestHeight = 0;
@@ -1878,85 +1881,103 @@ export class Game {
     this.updateMovePadUI();
   }
 
-  async handleFail() {
-    if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
+   async handleFail() {
+  if (this.isGameOver || this.isRestarting || !this.blockSystem) return;
 
-    this.isGameOver = true;
-    this.updateControlButton();
-    this.updateRotateButtonsUI();
-    this.updateMovePadUI();
+  this.isGameOver = true;
+  this.isFailureCinematicActive = true;
+  this.failureCinematicEndTime = performance.now() + 2800;
 
-    setTimeout(async () => {
-      try {
-        const currentHeight = this.blockSystem.getStableHeight();
-        const finalScore = this.blockSystem.getPeakStableHeight();
+  this.updateControlButton();
+  this.updateRotateButtonsUI();
+  this.updateMovePadUI();
 
-        if (finalScore > this.bestHeight) {
-          this.bestHeight = finalScore;
-        }
+  try {
+    while (performance.now() < this.failureCinematicEndTime) {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    }
 
-        this.updateBestHeightUI();
+    const currentHeight = this.blockSystem.getStableHeight();
+    const finalScore = this.blockSystem.getPeakStableHeight();
 
-        let name = prompt(
-          `실패!\n현재 높이: ${currentHeight.toFixed(2)}\n최종 점수: ${finalScore.toFixed(2)}\n최고 기록: ${this.bestHeight.toFixed(2)}\n닉네임 입력:`,
-          this.nickname || "Player"
-        );
+    if (finalScore > this.bestHeight) {
+      this.bestHeight = finalScore;
+    }
 
-        if (!name || !name.trim()) {
-          name = "Player";
-        }
-
-        this.nickname = name.trim();
-        this.updateNicknameUI();
-
-        try {
-          const rankingResult = await this.submitRankingScore();
-          if (rankingResult?.rank) {
-            alert(
-              `랭킹 등록 완료!\n닉네임: ${this.nickname}\n점수: ${finalScore.toFixed(2)}\n현재 순위: ${rankingResult.rank}위`
-            );
-          }
-        } catch (rankingError) {
-          console.warn("Ranking submit failed:", rankingError);
-        }
-      } finally {
-        await this.restartGame();
-      }
-    }, 100);
-  }
-
-  async restartGame() {
-    if (this.isRestarting || !this.blockSystem) return;
-
-    this.isRestarting = true;
-    this.endActionHold();
-    this.blockSystem.reset();
-    this.exitRotationMode();
-    this.placementGuide?.hide();
-    this.blockSystem.setGameStarted(false);
-
-    this.renderer.resetCamera();
-    this.nextPreviewKey = "";
-
-    this.isSessionStarted = false;
-    this.isGameOver = false;
-
-    this.updateNicknameUI();
-    this.updateHeightUI();
     this.updateBestHeightUI();
-    this.updateVersionUI();
-    this.updateStartOverlayLayout();
 
-    await this.blockSystem.getNextBlockInfo();
-    await this.updateNextPreviewUI();
+    let name = prompt(
+      `실패!\n현재 높이: ${currentHeight.toFixed(2)}\n최종 점수: ${finalScore.toFixed(2)}\n최고 기록: ${this.bestHeight.toFixed(2)}\n닉네임 입력:`,
+      this.nickname || "Player"
+    );
 
-    this.isRestarting = false;
-    this.updateControlButton();
-    this.updateRotateButtonsUI();
-    this.updateMovePadUI();
+    if (!name || !name.trim()) {
+      name = "Player";
+    }
 
-    await this.refreshLeaderboardUI(true);
+    this.nickname = name.trim();
+    this.updateNicknameUI();
+
+    try {
+      const rankingResult = await this.submitRankingScore();
+      if (rankingResult?.rank) {
+        alert(
+          `최종 점수: ${finalScore.toFixed(2)}\n현재 랭킹: ${rankingResult.rank}위`
+        );
+      } else {
+        alert(`최종 점수: ${finalScore.toFixed(2)}`);
+      }
+    } catch (rankingError) {
+      console.warn("Ranking submit failed:", rankingError);
+      alert(`최종 점수: ${finalScore.toFixed(2)}`);
+    }
+  } finally {
+    this.isFailureCinematicActive = false;
+    this.failureCinematicEndTime = 0;
+    await this.restartGame();
+    
   }
+}
+
+ async restartGame() {
+  if (this.isRestarting || !this.blockSystem) return;
+
+  this.isRestarting = true;
+
+  this.endActionHold();
+  this.exitRotationMode();
+
+  this.isFailureCinematicActive = false;
+  this.failureCinematicEndTime = 0;
+
+  this.blockSystem.reset();
+  this.blockSystem.setGameStarted(false);
+
+  this.placementGuide?.hide();
+  this.renderer.resetCamera();
+  this.nextPreviewKey = "";
+
+  this.isSessionStarted = false;
+  this.isGameOver = false;
+
+  this.updateNicknameUI();
+  this.updateHeightUI();
+  this.updateBestHeightUI();
+  this.updateVersionUI();
+  this.updateStartOverlayLayout();
+
+  await this.blockSystem.getNextBlockInfo();
+  await this.updateNextPreviewUI();
+
+  this.isRestarting = false;
+
+  this.updateControlButton();
+  this.updateRotateButtonsUI();
+  this.updateMovePadUI();
+
+  await this.refreshLeaderboardUI(true);
+  
+}
 
   setLoadingProgress(progress = 0, text = "") {
     const safeProgress = Math.max(0, Math.min(1, progress));
@@ -2153,24 +2174,33 @@ export class Game {
 
     this.lastTime = time;
 
-    if (!this.isGameOver && !this.isRestarting && this.blockSystem) {
-      this.physics.step();
-      this.blockSystem.update(dt);
+   const shouldSimulateWorld =
+  !this.isRestarting &&
+  this.blockSystem &&
+  (!this.isGameOver || this.isFailureCinematicActive);
 
-      this.triggerLandingEffects();
-      this.syncRotationGizmo();
-      this.updatePlacementGhost();
+if (shouldSimulateWorld) {
+  this.physics.step();
+  this.blockSystem.update(dt);
 
-      const followHeight = this.blockSystem.getMaxHeight();
-      this.renderer.updateCamera(followHeight);
+  this.triggerLandingEffects();
+  this.syncRotationGizmo();
+  this.updatePlacementGhost();
 
-      this.updateHeightUI();
-      this.updateControlButton();
-      this.updateRotateButtonsUI();
-      this.updateMovePadUI();
-      await this.updateNextPreviewUI();
-    }
+  if (this.isFailureCinematicActive) {
+    const bounds = this.blockSystem.getStructureBounds(true);
+    this.renderer.updateFailureCamera(bounds, dt);
+  } else {
+    const followHeight = this.blockSystem.getMaxHeight();
+    this.renderer.updateCamera(followHeight);
+  }
 
+  this.updateHeightUI();
+  this.updateControlButton();
+  this.updateRotateButtonsUI();
+  this.updateMovePadUI();
+  await this.updateNextPreviewUI();
+}
     if (this.renderer.update) {
       this.renderer.update(dt);
     }

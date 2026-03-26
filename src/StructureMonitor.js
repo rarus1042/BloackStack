@@ -3,7 +3,7 @@ export class StructureMonitor {
     this.stageSize = options.stageSize ?? 5;
     this.stageHalf = this.stageSize / 2;
     this.failY = options.failY ?? -3;
-    this.failGraceTime = options.failGraceTime ?? 2; // 초
+    this.failGraceTime = options.failGraceTime ?? 0.5; // 초
     this.failCandidateSince = null;
 
     this.contactVerticalThreshold = options.contactVerticalThreshold ?? 0.32;
@@ -27,6 +27,16 @@ export class StructureMonitor {
     this.jitterPositionDeltaMax = options.jitterPositionDeltaMax ?? 0.006;
     this.jitterYDeltaMax = options.jitterYDeltaMax ?? 0.006;
     this.jitterFramesRequired = options.jitterFramesRequired ?? 16;
+
+        this.failOuterMargin = options.failOuterMargin ?? 1.35;
+    this.failHardBelowY = options.failHardBelowY ?? (this.failY - 1.0);
+
+    this.failMovingLinearThreshold = options.failMovingLinearThreshold ?? 0.22;
+    this.failMovingAngularThreshold = options.failMovingAngularThreshold ?? 0.2;
+
+    this.failOutsideFramesRequired = options.failOutsideFramesRequired ?? 18;
+    this.failCollapseFramesRequired = options.failCollapseFramesRequired ?? 10;
+
   }
 
   forceSettle(block) {
@@ -38,7 +48,8 @@ export class StructureMonitor {
     block.landingStartTime = null;
     block.jitterFrames = 0;
     block.prevPosForJitter = null;
-    block.snapApplied = false;
+    block.failOutsideFrames = 0;
+    block.failCollapseFrames = 0;
 
     block.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     block.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
@@ -57,7 +68,8 @@ export class StructureMonitor {
     block.landingStartTime = null;
     block.jitterFrames = 0;
     block.prevPosForJitter = null;
-    block.snapApplied = false;
+    block.failOutsideFrames = 0;
+    block.failCollapseFrames = 0;
   }
 
   refreshLandingWindow(block) {
@@ -311,44 +323,57 @@ export class StructureMonitor {
     return highest;
   }
 
-  checkFail(blocks) {
-    const now = performance.now();
-    const margin = 1.15;
-
-    let hasFailCandidate = false;
+   checkFail(blocks) {
+    let hasActiveCollapseCandidate = false;
 
     for (const block of blocks) {
-      if (block.state === "preview") continue;
+      if (!block || block.state === "preview") continue;
 
       const pos = block.body.translation();
+      const lv = block.body.linvel();
+      const av = block.body.angvel();
+
+      const linearSpeed = Math.hypot(lv.x, lv.y, lv.z);
+      const angularSpeed = Math.hypot(av.x, av.y, av.z);
 
       const outOfStage =
-        Math.abs(pos.x) > this.stageSize * 0.5 + margin ||
-        Math.abs(pos.z) > this.stageSize * 0.5 + margin;
+        Math.abs(pos.x) > this.stageSize * 0.5 + this.failOuterMargin ||
+        Math.abs(pos.z) > this.stageSize * 0.5 + this.failOuterMargin;
 
-      const belowStage = pos.y < this.failY - 0.35;
+      const hardBelowStage = pos.y < this.failHardBelowY;
+      if (hardBelowStage) {
+        return true;
+      }
 
-      if (outOfStage || belowStage) {
-        hasFailCandidate = true;
+      const isMovingEnough =
+        linearSpeed > this.failMovingLinearThreshold ||
+        angularSpeed > this.failMovingAngularThreshold ||
+        lv.y < -0.08;
+
+      if (outOfStage) {
+        block.failOutsideFrames = (block.failOutsideFrames ?? 0) + 1;
+      } else {
+        block.failOutsideFrames = 0;
+      }
+
+      if (outOfStage && isMovingEnough) {
+        block.failCollapseFrames = (block.failCollapseFrames ?? 0) + 1;
+      } else {
+        block.failCollapseFrames = 0;
+      }
+
+      const outsideLongEnough =
+        (block.failOutsideFrames ?? 0) >= this.failOutsideFramesRequired;
+
+      const collapsingLongEnough =
+        (block.failCollapseFrames ?? 0) >= this.failCollapseFramesRequired;
+
+      if (outsideLongEnough && collapsingLongEnough) {
+        hasActiveCollapseCandidate = true;
         break;
       }
     }
 
-    if (!hasFailCandidate) {
-      this.failCandidateSince = null;
-      return false;
-    }
-
-    if (this.failCandidateSince === null) {
-      this.failCandidateSince = now;
-      return false;
-    }
-
-    const elapsedSec = (now - this.failCandidateSince) / 1000;
-    if (elapsedSec < this.failGraceTime) {
-      return false;
-    }
-
-    return true;
+    return hasActiveCollapseCandidate;
   }
 }
