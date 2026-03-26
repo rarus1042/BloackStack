@@ -136,7 +136,10 @@ export class PlacementController {
       return;
     }
 
-    this.guide.setHeight(block.mesh.position.y);
+   const guideSurfaceY =
+  this.blockSystem?.getStableHeight?.() ?? 0;
+
+this.guide.setHeight(guideSurfaceY);
     this.updateProjectionRay(block);
     this.guide.show();
 

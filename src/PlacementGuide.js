@@ -23,14 +23,13 @@ constructor(scene, options = {}) {
   this.predictionGhostOutline = null;
   this.predictionGhostSourceId = null;
 
-  this.createStageGrid();
+  this.createStageGrid();     // 바닥 전용
   this.createProjectionRay();
   this.setHeight(0);
 }
-
 createStageGrid() {
   const half = this.stageSize / 2;
-  const y = 0.0015;
+  const y = 0.002;
 
   const minorPoints = [];
   const majorPoints = [];
@@ -55,26 +54,26 @@ createStageGrid() {
   const minorMat = new THREE.LineBasicMaterial({
     color: 0xffffff,
     transparent: true,
-    opacity: 0.12,
+    opacity: 0.10,
     depthWrite: false,
     depthTest: false,
   });
 
   this.stageGridMinor = new THREE.LineSegments(minorGeom, minorMat);
-  this.stageGridMinor.renderOrder = 989;
+  this.stageGridMinor.renderOrder = 988;
   this.root.add(this.stageGridMinor);
 
   const majorGeom = new THREE.BufferGeometry().setFromPoints(majorPoints);
   const majorMat = new THREE.LineBasicMaterial({
     color: 0xffffff,
     transparent: true,
-    opacity: 0.22,
+    opacity: 0.18,
     depthWrite: false,
     depthTest: false,
   });
 
   this.stageGridMajor = new THREE.LineSegments(majorGeom, majorMat);
-  this.stageGridMajor.renderOrder = 990;
+  this.stageGridMajor.renderOrder = 989;
   this.root.add(this.stageGridMajor);
 }
 
@@ -160,7 +159,7 @@ createStageGrid() {
 }
 
 setHeight(y) {
-  this.root.position.y = y + 0.0005;
+  this.root.position.y = y + 0.001;
 }
   updateProjection(from, to) {
     if (!from || !to) {

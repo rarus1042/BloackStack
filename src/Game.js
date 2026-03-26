@@ -1379,52 +1379,53 @@ this.placementGuide = new PlacementGuide(this.renderer.scene, {
   }
 
   updatePlacementGhost() {
-    if (!this.placementGuide || !this.blockSystem) return;
+  if (!this.placementGuide || !this.blockSystem) return;
 
-    const block = this.blockSystem.getCurrentPreviewBlock?.();
-    if (!block?.mesh || !this.blockSystem.getPlacementPrediction) {
-      this.placementGuide.hideProjection();
-      this.placementGuide.hidePredictionGhost();
-      return;
-    }
-
-    const prediction = this.blockSystem.getPlacementPrediction();
-    if (!prediction?.position || !prediction?.quaternion) {
-      this.placementGuide.hideProjection();
-      this.placementGuide.hidePredictionGhost();
-      return;
-    }
-
-    const currentBottomY = prediction.currentBottomY ?? block.mesh.position.y;
-    const predictedBottomY = prediction.predictedBottomY ?? prediction.position.y;
-
-    const projectionStart = new THREE.Vector3(
-      block.mesh.position.x,
-      currentBottomY + 0.01,
-      block.mesh.position.z
-    );
-
-    const projectionEnd = new THREE.Vector3(
-      prediction.position.x,
-      predictedBottomY + 0.008,
-      prediction.position.z
-    );
-
-    this.placementGuide.setHeight(block.mesh.position.y);
-    this.placementGuide.show();
-
-    if (projectionEnd.y >= projectionStart.y - 0.002) {
-      this.placementGuide.hideProjection();
-    } else {
-      this.placementGuide.updateProjection(projectionStart, projectionEnd);
-    }
-
-    this.placementGuide.updatePredictionGhost(
-      block,
-      prediction.position,
-      prediction.quaternion
-    );
+  const block = this.blockSystem.getCurrentPreviewBlock?.();
+  if (!block?.mesh || !this.blockSystem.getPlacementPrediction) {
+    this.placementGuide.hideProjection();
+    this.placementGuide.hidePredictionGhost();
+    return;
   }
+
+  const prediction = this.blockSystem.getPlacementPrediction();
+  if (!prediction?.position || !prediction?.quaternion) {
+    this.placementGuide.hideProjection();
+    this.placementGuide.hidePredictionGhost();
+    return;
+  }
+
+  const currentBottomY = prediction.currentBottomY ?? block.mesh.position.y;
+  const predictedBottomY = prediction.predictedBottomY ?? prediction.position.y;
+
+  const projectionStart = new THREE.Vector3(
+    block.mesh.position.x,
+    currentBottomY + 0.01,
+    block.mesh.position.z
+  );
+
+  const projectionEnd = new THREE.Vector3(
+    prediction.position.x,
+    predictedBottomY + 0.008,
+    prediction.position.z
+  );
+
+  const guideSurfaceY = this.blockSystem.getStableHeight?.() ?? 0;
+  this.placementGuide.setHeight(guideSurfaceY);
+  this.placementGuide.show();
+
+  if (projectionEnd.y >= projectionStart.y - 0.002) {
+    this.placementGuide.hideProjection();
+  } else {
+    this.placementGuide.updateProjection(projectionStart, projectionEnd);
+  }
+
+  this.placementGuide.updatePredictionGhost(
+    block,
+    prediction.position,
+    prediction.quaternion
+  );
+}
 
   renderNextPreview() {
     if (!this.nextPreviewRenderer || !this.nextPreviewScene || !this.nextPreviewCamera) return;
