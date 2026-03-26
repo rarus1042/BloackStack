@@ -2090,7 +2090,7 @@ export class Game {
       this.updateMovePadUI();
       this.updateControlButton();
       await this.updateNextPreviewUI();
-      await this.refreshLeaderboardUI(true);
+      //await this.refreshLeaderboardUI(true);
 
       window.addEventListener("resize", this.onResize);
       window.addEventListener("keydown", this.onKeyDown);

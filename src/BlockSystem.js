@@ -73,8 +73,8 @@ this.snapQuaternions = this.buildRightAngleQuaternionSet();
 this.factory = new BlockFactory(scene, physics, {
   blockSize: this.blockSize,
   cellSize: this.gridStep,
-  collisionCellScale: 0.94,
-  settleCellScale: 0.985,
+  collisionCellScale: 0.99,
+  settleCellScale: 0.99,
   slowFallSpeed: this.slowFallSpeed,
   fastFallSpeed: this.fastFallSpeed,
   linearDamping: 2.2,
