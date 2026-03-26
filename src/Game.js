@@ -16,7 +16,7 @@ export class Game {
       gridStep: 1,
       previewClampPadding: 0.55,
 
-     slowFallSpeed: 1.25,
+     slowFallSpeed: 1.0,
       fastFallSpeed: 4.0,
 
       spawnClearance: 10.4,

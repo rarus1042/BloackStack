@@ -25,8 +25,8 @@ export class BlockSystem {
     this.fastFallSpeed = options.fastFallSpeed ?? 5.5;
     this.previewFallMultiplier = 1;
 
-    this.spawnClearance = options.spawnClearance ?? 10.4;
-    this.minSpawnHeight = options.minSpawnHeight ?? 11.0;
+    this.spawnClearance = options.spawnClearance ?? 20.0;
+    this.minSpawnHeight = options.minSpawnHeight ?? 20.0;
     this.previewClampPadding = options.previewClampPadding ?? 0.4;
 
     this.liveHeight = 0;
@@ -294,7 +294,7 @@ rotatePreviewByAxis(axis, angle) {
     if (this.currentBlock.state !== "preview") return false;
     if (this.state !== "EDIT") return false;
 
-    this.previewFallMultiplier = 5;
+    this.previewFallMultiplier = 8;
     return true;
   }
 

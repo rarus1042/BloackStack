@@ -3,7 +3,7 @@ import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.128.0/exampl
 
 export class Renderer {
   constructor(options = {}) {
-    this.stageSize = options.stageSize ?? 6;
+    this.stageSize = options.stageSize ?? 10;
     this.stageHalf = this.stageSize / 2;
     this.groundHeight = options.groundHeight ?? 0.12;
     this.stageThickness = options.stageThickness ?? 0.16;
@@ -17,7 +17,7 @@ export class Renderer {
       0.1,
       1000
     );
-    this.camera.position.set(8.4, 15, 15);
+    this.camera.position.set(8.4, 15, 20);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
