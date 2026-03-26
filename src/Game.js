@@ -1471,20 +1471,52 @@ syncRotationGizmo() {
     return result;
   }
 
- updateControlButton() {
+updateControlButton() {
   if (!this.actionButton || !this.blockSystem) return;
+
+  // ✨ 기본 (밝은 화이트)
+  const setBaseStyle = () => {
+    this.actionButton.style.opacity = "1";
+    this.actionButton.style.color = "#1a1a1a";
+    this.actionButton.style.background =
+      "linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(235,240,248,0.95) 100%)";
+    this.actionButton.style.border = "1px solid rgba(255,255,255,0.7)";
+    this.actionButton.style.boxShadow =
+      "0 10px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.9)";
+    this.actionButton.style.backdropFilter = "blur(10px)";
+  };
+
+  // ✨ 누르고 있을 때 (강조)
+  const setHoldingStyle = () => {
+    this.actionButton.style.opacity = "1";
+    this.actionButton.style.color = "#0f1a2b";
+    this.actionButton.style.background =
+      "linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(210,225,255,1) 100%)";
+    this.actionButton.style.boxShadow =
+      "0 14px 30px rgba(60,120,255,0.28), inset 0 1px 0 rgba(255,255,255,1)";
+  };
+
+  // ✨ 비활성 (연한 화이트)
+  const setDisabledStyle = () => {
+    this.actionButton.style.opacity = "0.55";
+    this.actionButton.style.color = "#666";
+    this.actionButton.style.background =
+      "linear-gradient(180deg, rgba(245,245,245,0.9) 0%, rgba(220,220,220,0.9) 100%)";
+    this.actionButton.style.boxShadow =
+      "0 6px 14px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.6)";
+  };
 
   if (!this.isSessionStarted) {
     this.actionButton.disabled = true;
     this.actionButton.textContent = "시작 대기";
-    this.actionButton.style.opacity = "0.5";
+    setDisabledStyle();
     return;
   }
 
   if (this.isGameOver || this.isRestarting) {
     this.actionButton.disabled = true;
     this.actionButton.textContent = "대기중";
-    this.actionButton.style.opacity = "0.5";
+    setDisabledStyle();
     return;
   }
 
@@ -1493,20 +1525,25 @@ syncRotationGizmo() {
   if (hasPreview && this.blockSystem.state === "EDIT") {
     this.actionButton.disabled = false;
     this.actionButton.textContent = this.isActionHolding ? "가속 중" : "가속 낙하";
-    this.actionButton.style.opacity = "1";
+
+    if (this.isActionHolding) {
+      setHoldingStyle();
+    } else {
+      setBaseStyle();
+    }
     return;
   }
 
   if (this.blockSystem.state === "WAITING") {
     this.actionButton.disabled = true;
     this.actionButton.textContent = "착지중";
-    this.actionButton.style.opacity = "0.5";
+    setDisabledStyle();
     return;
   }
 
   this.actionButton.disabled = true;
   this.actionButton.textContent = "대기중";
-  this.actionButton.style.opacity = "0.5";
+  setDisabledStyle();
 }
 
   updateRotateButtonsUI() {

@@ -3,6 +3,8 @@ export class StructureMonitor {
     this.stageSize = options.stageSize ?? 5;
     this.stageHalf = this.stageSize / 2;
     this.failY = options.failY ?? -3;
+    this.failGraceTime = options.failGraceTime ?? 2; // 초
+    this.failCandidateSince = null;
 
     this.contactVerticalThreshold = options.contactVerticalThreshold ?? 0.32;
     this.contactHorizontalThreshold = options.contactHorizontalThreshold ?? 0.26;
@@ -258,25 +260,46 @@ export class StructureMonitor {
     return highest;
   }
 
-  checkFail(blocks) {
-    const margin = 1.0;
+checkFail(blocks) {
+  const now = performance.now();
+  const margin = 1.15;
 
-    for (const block of blocks) {
-      if (block.state === "preview") continue;
+  let hasFailCandidate = false;
 
-      const pos = block.body.translation();
+  for (const block of blocks) {
+    if (block.state === "preview") continue;
 
-      const outOfStage =
-        Math.abs(pos.x) > this.stageHalf + margin ||
-        Math.abs(pos.z) > this.stageHalf + margin;
+    const pos = block.body.translation();
 
-      const belowStage = pos.y < this.failY;
+    // 지금 파일은 원형 기준이라 너무 빨리 실패가 날 수 있음
+    // 정사각형 스테이지 + 여유 마진 기준으로 변경
+    const outOfStage =
+      Math.abs(pos.x) > this.stageSize * 0.5 + margin ||
+      Math.abs(pos.z) > this.stageSize * 0.5 + margin;
 
-      if (outOfStage || belowStage) {
-        return true;
-      }
+    const belowStage = pos.y < this.failY - 0.35;
+
+    if (outOfStage || belowStage) {
+      hasFailCandidate = true;
+      break;
     }
+  }
 
+  if (!hasFailCandidate) {
+    this.failCandidateSince = null;
     return false;
   }
+
+  if (this.failCandidateSince === null) {
+    this.failCandidateSince = now;
+    return false;
+  }
+
+  const elapsedSec = (now - this.failCandidateSince) / 1000;
+  if (elapsedSec < this.failGraceTime) {
+    return false;
+  }
+
+  return true;
+}
 }
