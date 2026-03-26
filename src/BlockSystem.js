@@ -68,6 +68,12 @@ this.settleSnapLinearVelocityKeep = options.settleSnapLinearVelocityKeep ?? 0.08
 this.settleSnapAngularVelocityKeep = options.settleSnapAngularVelocityKeep ?? 0.18;
 this.settleSnapMaxVerticalSpeed = options.settleSnapMaxVerticalSpeed ?? 0.0025;
 
+this.landingGridSnapStrength = options.landingGridSnapStrength ?? 0.28;
+this.landingGridRotationStrength = options.landingGridRotationStrength ?? 0.18;
+this.landingGridMaxHorizontalSpeed = options.landingGridMaxHorizontalSpeed ?? 0.14;
+this.landingGridSnapDistance = options.landingGridSnapDistance ?? 0.42;
+this.landingGridRotationDotMin = options.landingGridRotationDotMin ?? 0.82;
+
 this.snapQuaternions = this.buildRightAngleQuaternionSet();
 
 
@@ -130,6 +136,118 @@ this.factory = new BlockFactory(scene, physics, {
     const now = performance.now();
     return now - this.lastRotateInputTime < this.rotateSlowLandingWindowMs;
   }
+
+  setPreviewPositionFromWorldPoint(worldPoint) {
+  if (!worldPoint) return false;
+  return this.setPreviewPosition(worldPoint.x, worldPoint.z);
+}
+
+applyLandingGridAssist(block, dt = 0.016) {
+  if (!block || block.state !== "landing") return false;
+  if (!block.collision?.cellOffsets?.length) return false;
+
+  const posRaw = block.body.translation();
+  const rotRaw = block.body.rotation();
+
+  const currentPosition = new THREE.Vector3(posRaw.x, posRaw.y, posRaw.z);
+  const currentQuaternion = new THREE.Quaternion(
+    rotRaw.x,
+    rotRaw.y,
+    rotRaw.z,
+    rotRaw.w
+  );
+
+  const targetX = this.snapToGrid(currentPosition.x);
+  const targetZ = this.snapToGrid(currentPosition.z);
+
+  const distXZ = Math.hypot(targetX - currentPosition.x, targetZ - currentPosition.z);
+  if (distXZ > this.landingGridSnapDistance) {
+    return false;
+  }
+
+  const blendedPosition = this.clampGridPositionToStage(
+    new THREE.Vector3(
+      THREE.MathUtils.lerp(
+        currentPosition.x,
+        targetX,
+        THREE.MathUtils.clamp(this.landingGridSnapStrength, 0, 1)
+      ),
+      currentPosition.y,
+      THREE.MathUtils.lerp(
+        currentPosition.z,
+        targetZ,
+        THREE.MathUtils.clamp(this.landingGridSnapStrength, 0, 1)
+      )
+    )
+  );
+
+  if (!this.collidesShapeAt(blendedPosition, currentQuaternion, block.collision, block)) {
+    block.body.setTranslation(
+      {
+        x: blendedPosition.x,
+        y: blendedPosition.y,
+        z: blendedPosition.z,
+      },
+      true
+    );
+  }
+
+  const lv = block.body.linvel();
+  const limitedXZ = this.monitor.clampHorizontal(
+    lv.x * 0.42,
+    lv.z * 0.42,
+    this.landingGridMaxHorizontalSpeed
+  );
+
+  block.body.setLinvel(
+    {
+      x: limitedXZ.x,
+      y: lv.y,
+      z: limitedXZ.z,
+    },
+    true
+  );
+
+  const snappedRotationInfo = this.getNearestRightAngleQuaternion(currentQuaternion);
+  const snapQuaternion = snappedRotationInfo.quaternion;
+  const rotDot = Math.abs(currentQuaternion.dot(snapQuaternion));
+
+  if (rotDot >= this.landingGridRotationDotMin) {
+    const blendedQuaternion = currentQuaternion
+      .clone()
+      .slerp(
+        snapQuaternion,
+        THREE.MathUtils.clamp(this.landingGridRotationStrength, 0, 1)
+      )
+      .normalize();
+
+    const posCheck = block.body.translation();
+    const checkPosition = new THREE.Vector3(posCheck.x, posCheck.y, posCheck.z);
+
+    if (!this.collidesShapeAt(checkPosition, blendedQuaternion, block.collision, block)) {
+      block.body.setRotation(blendedQuaternion, true);
+    }
+  }
+
+  if (Math.abs(targetX - currentPosition.x) <= 0.02 || Math.abs(targetZ - currentPosition.z) <= 0.02) {
+    const snappedPos = this.clampGridPositionToStage(
+      new THREE.Vector3(targetX, currentPosition.y, targetZ)
+    );
+
+    if (!this.collidesShapeAt(snappedPos, currentQuaternion, block.collision, block)) {
+      block.body.setTranslation(
+        {
+          x: snappedPos.x,
+          y: snappedPos.y,
+          z: snappedPos.z,
+        },
+        true
+      );
+    }
+  }
+
+  return true;
+}
 
   getPreviewFallSpeedMultiplier() {
     return this.isSlowLandingMode() ? this.rotateFallMultiplier : 1;
@@ -1349,6 +1467,13 @@ update(dt = 0.016) {
   this.monitor.updateDynamicBlocks(this.blocks, {
     slowLanding: this.isSlowLandingMode(),
   });
+
+  for (const block of this.blocks) {
+    if (!block) continue;
+    if (block.state === "landing") {
+      this.applyLandingGridAssist(block, dt);
+    }
+  }
 
   this.applySettleSnapToAll();
   this.meshSync.sync(this.blocks);

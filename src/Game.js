@@ -45,10 +45,11 @@ this.config = {
     });
     this.rotateGizmo.hide();
     this.blockSystem = null;
-    this.placementGuide = new PlacementGuide(this.renderer.scene, {
-      stageSize: this.config.stageSize,
-      padding: this.config.previewClampPadding ?? 0.35,
-    });
+this.placementGuide = new PlacementGuide(this.renderer.scene, {
+  stageSize: this.config.stageSize,
+  padding: this.config.previewClampPadding ?? 0.35,
+  cellSize: this.config.gridStep ?? 1,
+});
 
         this.isFailureCinematicActive = false;
     this.failureCinematicEndTime = 0;

@@ -1,30 +1,82 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js";
 
 export class PlacementGuide {
-  constructor(scene, options = {}) {
-    this.scene = scene;
-    this.stageSize = options.stageSize ?? 5;
-    this.padding = options.padding ?? 0.35;
-    this.radius = Math.max(0, this.stageSize / 2 - this.padding);
+constructor(scene, options = {}) {
+  this.scene = scene;
+  this.stageSize = options.stageSize ?? 5;
+  this.padding = options.padding ?? 0.35;
+  this.cellSize = options.cellSize ?? 1;
+  this.radius = Math.max(0, this.stageSize / 2 - this.padding);
 
-    this.root = new THREE.Group();
-    this.scene.add(this.root);
+  this.root = new THREE.Group();
+  this.scene.add(this.root);
 
-    this.predictionRoot = new THREE.Group();
-    this.predictionRoot.visible = false;
-    this.scene.add(this.predictionRoot);
+  this.predictionRoot = new THREE.Group();
+  this.predictionRoot.visible = false;
+  this.scene.add(this.predictionRoot);
 
-    this.projectionRoot = new THREE.Group();
-    this.projectionRoot.visible = false;
-    this.scene.add(this.projectionRoot);
+  this.projectionRoot = new THREE.Group();
+  this.projectionRoot.visible = false;
+  this.scene.add(this.projectionRoot);
 
-    this.predictionGhost = null;
-    this.predictionGhostOutline = null;
-    this.predictionGhostSourceId = null;
+  this.predictionGhost = null;
+  this.predictionGhostOutline = null;
+  this.predictionGhostSourceId = null;
 
-    this.createProjectionRay();
-    this.setHeight(0);
+  this.createStageGrid();
+  this.createProjectionRay();
+  this.setHeight(0);
+}
+
+createStageGrid() {
+  const half = this.stageSize / 2;
+  const y = 0.0015;
+
+  const minorPoints = [];
+  const majorPoints = [];
+
+  for (let x = -half; x <= half + 1e-6; x += this.cellSize) {
+    const target = Math.abs(x) < 1e-6 ? majorPoints : minorPoints;
+    target.push(
+      new THREE.Vector3(x, y, -half),
+      new THREE.Vector3(x, y, half)
+    );
   }
+
+  for (let z = -half; z <= half + 1e-6; z += this.cellSize) {
+    const target = Math.abs(z) < 1e-6 ? majorPoints : minorPoints;
+    target.push(
+      new THREE.Vector3(-half, y, z),
+      new THREE.Vector3(half, y, z)
+    );
+  }
+
+  const minorGeom = new THREE.BufferGeometry().setFromPoints(minorPoints);
+  const minorMat = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.12,
+    depthWrite: false,
+    depthTest: false,
+  });
+
+  this.stageGridMinor = new THREE.LineSegments(minorGeom, minorMat);
+  this.stageGridMinor.renderOrder = 989;
+  this.root.add(this.stageGridMinor);
+
+  const majorGeom = new THREE.BufferGeometry().setFromPoints(majorPoints);
+  const majorMat = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.22,
+    depthWrite: false,
+    depthTest: false,
+  });
+
+  this.stageGridMajor = new THREE.LineSegments(majorGeom, majorMat);
+  this.stageGridMajor.renderOrder = 990;
+  this.root.add(this.stageGridMajor);
+}
 
   createProjectionRay() {
     const beamGeom = new THREE.CylinderGeometry(0.02, 0.035, 1, 16, 1, true);
@@ -58,10 +110,58 @@ export class PlacementGuide {
     this.projectionRoot.add(this.projectionLine);
   }
 
-  setHeight(y) {
-    this.root.position.y = y + 0.02;
+  createGrid() {
+  const half = this.stageSize / 2;
+  const y = 0.003;
+  const points = [];
+  const majorPoints = [];
+
+  for (let x = -half; x <= half + 1e-6; x += this.cellSize) {
+    const target = Math.abs(x) < 1e-6 ? majorPoints : points;
+    target.push(
+      new THREE.Vector3(x, y, -half),
+      new THREE.Vector3(x, y, half)
+    );
   }
 
+  for (let z = -half; z <= half + 1e-6; z += this.cellSize) {
+    const target = Math.abs(z) < 1e-6 ? majorPoints : points;
+    target.push(
+      new THREE.Vector3(-half, y, z),
+      new THREE.Vector3(half, y, z)
+    );
+  }
+
+  const gridGeom = new THREE.BufferGeometry().setFromPoints(points);
+  const gridMat = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.14,
+    depthWrite: false,
+    depthTest: false,
+  });
+
+  this.gridLines = new THREE.LineSegments(gridGeom, gridMat);
+  this.gridLines.renderOrder = 990;
+  this.root.add(this.gridLines);
+
+  const majorGeom = new THREE.BufferGeometry().setFromPoints(majorPoints);
+  const majorMat = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+    depthTest: false,
+  });
+
+  this.majorGridLines = new THREE.LineSegments(majorGeom, majorMat);
+  this.majorGridLines.renderOrder = 991;
+  this.root.add(this.majorGridLines);
+}
+
+setHeight(y) {
+  this.root.position.y = y + 0.0005;
+}
   updateProjection(from, to) {
     if (!from || !to) {
       this.hideProjection();
@@ -233,21 +333,26 @@ export class PlacementGuide {
     this.hidePredictionGhost();
   }
 
-  dispose() {
-    this.clearPredictionGhost();
+dispose() {
+  this.clearPredictionGhost();
 
-    this.scene.remove(this.root);
-    this.scene.remove(this.projectionRoot);
-    this.scene.remove(this.predictionRoot);
+  this.scene.remove(this.root);
+  this.scene.remove(this.projectionRoot);
+  this.scene.remove(this.predictionRoot);
 
-    this.root.traverse((obj) => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) obj.material.dispose();
-    });
+  this.root.traverse((obj) => {
+    if (obj.geometry) obj.geometry.dispose?.();
+    if (obj.material) obj.material.dispose?.();
+  });
 
-    this.projectionRoot.traverse((obj) => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) obj.material.dispose();
-    });
-  }
+  this.projectionRoot.traverse((obj) => {
+    if (obj.geometry) obj.geometry.dispose?.();
+    if (obj.material) obj.material.dispose?.();
+  });
+
+  this.predictionRoot.traverse((obj) => {
+    if (obj.geometry) obj.geometry.dispose?.();
+    if (obj.material) obj.material.dispose?.();
+  });
+}
 }
