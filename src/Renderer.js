@@ -15,9 +15,10 @@ export class Renderer {
       60,
       window.innerWidth / window.innerHeight,
       0.1,
-      2000
+      3000
     );
-    this.camera.position.set(8.4, 6.4, 8.4);
+
+    this.camera.position.set(8, 16, 20);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -73,7 +74,7 @@ export class Renderer {
     this.cameraZoomLerp = options.cameraZoomLerp ?? 0.22;
     this.cameraZoomWheelStep = options.cameraZoomWheelStep ?? 1.2;
     this.cameraMinDistance = options.cameraMinDistance ?? 4.5;
-    this.cameraMaxDistance = options.cameraMaxDistance ?? 26.0;
+    this.cameraMaxDistance = options.cameraMaxDistance ?? 150;
 
     this.cameraFollowLerp = options.cameraFollowLerp ?? 0.12;
     this.cameraHeightOffset = options.cameraHeightOffset ?? 0.25;
