@@ -8,30 +8,34 @@ import { GizmoController } from "./GizmoController.js";
 
 export class Game {
   constructor() {
-    this.config = {
-      stageSize: 16,
-      groundHeight: 0.01,
-      stageThickness: 0.16,
-      blockSize: 1,
-      gridStep: 1,
-      previewClampPadding: 0.55,
+this.config = {
+  stageSize: 16,
+  groundHeight: 0.01,
+  stageThickness: 0.16,
+  blockSize: 1,
+  gridStep: 1,
+  previewClampPadding: 0.55,
 
-      slowFallSpeed: 0.75,
-      fastFallSpeed: 4.0,
+  slowFallSpeed: 1,
+  fastFallSpeed: 8.5,
 
-      spawnClearance: 12.0,
-      minSpawnHeight: 12.0,
+  spawnClearance: 12.0,
+  minSpawnHeight: 12.0,
 
-      heightStep: 0.5,
+  heightStep: 0.5,
 
-      cameraFollowLerp: 0.12,
-      cameraHeightOffset: 0.35,
-      cameraMinTargetY: 0.85,
+  cameraFollowLerp: 0.12,
+  cameraHeightOffset: 0.35,
+  cameraMinTargetY: 0.85,
+  cameraPositionFollowLerp: 0.09,
+  cameraPositionHeightDeadZone: 0.7,
+  cameraPositionYOffset: 5.8,
+  cameraFailLerp: 0.06,
+  cameraFailHeightPadding: 8.5,
 
-      rotateFallMultiplier: 0.18,
-      rotateSlowLandingGraceMs: 240,
-    };
-
+  rotateFallMultiplier: 0.18,
+  rotateSlowLandingGraceMs: 240,
+};
     this.appVersion = "v0.2.0-tetris-grid-drop";
 
     this.renderer = new Renderer(this.config);

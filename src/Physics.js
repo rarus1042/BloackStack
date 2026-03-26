@@ -10,7 +10,6 @@ export class Physics {
     this.stageSize = options.stageSize ?? 10;
     this.groundHeight = options.groundHeight ?? 0.12;
 
-    // 바닥 충돌체는 아주 살짝만 축소
     this.groundColliderScale = options.groundColliderScale ?? 0.985;
   }
 
@@ -19,13 +18,24 @@ export class Physics {
 
     this.world = new this.RAPIER.World({ x: 0, y: -9.81, z: 0 });
 
-    this.world.integrationParameters.dt = 1 / 60;
-    this.world.integrationParameters.maxVelocityIterations = 12;
-    this.world.integrationParameters.maxVelocityFrictionIterations = 8;
-    this.world.integrationParameters.maxStabilizationIterations = 4;
+    const params = this.world.integrationParameters;
+    params.dt = 1 / 60;
 
-    if ("numSolverIterations" in this.world.integrationParameters) {
-      this.world.integrationParameters.numSolverIterations = 16;
+    // 고층 적층 안정화용 상향
+    params.maxVelocityIterations = 20;
+    params.maxVelocityFrictionIterations = 12;
+    params.maxStabilizationIterations = 8;
+
+    if ("numSolverIterations" in params) {
+      params.numSolverIterations = 28;
+    }
+
+    if ("minIslandSize" in params) {
+      params.minIslandSize = 128;
+    }
+
+    if ("maxCcdSubsteps" in params) {
+      params.maxCcdSubsteps = 4;
     }
 
     this.setupGround();
@@ -46,7 +56,7 @@ export class Physics {
       halfGroundHeight,
       groundHalfZ
     )
-      .setFriction(2.25)
+      .setFriction(2.6)
       .setRestitution(0.0)
       .setFrictionCombineRule(this.RAPIER.CoefficientCombineRule.Max)
       .setRestitutionCombineRule(this.RAPIER.CoefficientCombineRule.Min);

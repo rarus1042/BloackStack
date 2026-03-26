@@ -74,7 +74,7 @@ this.factory = new BlockFactory(scene, physics, {
   blockSize: this.blockSize,
   cellSize: this.gridStep,
   collisionCellScale: 0.99,
-  settleCellScale: 0.99,
+  settleCellScale: 1,
   slowFallSpeed: this.slowFallSpeed,
   fastFallSpeed: this.fastFallSpeed,
   linearDamping: 2.2,
@@ -594,7 +594,7 @@ getShapeHalfExtent(shapeData, mode = "collision") {
     if (this.currentBlock.state !== "preview") return false;
     if (this.state !== "EDIT") return false;
 
-    this.previewFallMultiplier = 10;
+    this.previewFallMultiplier = 30;
     return true;
   }
 
@@ -602,24 +602,25 @@ getShapeHalfExtent(shapeData, mode = "collision") {
     this.previewFallMultiplier = 1;
   }
 
-  dropCurrentBlockFast() {
-    if (!this.currentBlock) return false;
-    if (this.currentBlock.state !== "preview") return false;
-    if (this.state !== "EDIT") return false;
+dropCurrentBlockFast() {
+  if (!this.currentBlock) return false;
+  if (this.currentBlock.state !== "preview") return false;
+  if (this.state !== "EDIT") return false;
 
-    const block = this.currentBlock;
+  const block = this.currentBlock;
+  const dropSpeed = Math.max(this.fastFallSpeed, this.slowFallSpeed * 10);
 
-    this.factory.convertPreviewToDynamic(block, this.fastFallSpeed);
-    block.committed = true;
-    this.lastCommittedBlockId = block.id;
+  this.factory.convertPreviewToDynamic(block, dropSpeed);
+  block.committed = true;
+  this.lastCommittedBlockId = block.id;
 
-    this.currentBlock = null;
-    this.previewFallMultiplier = 1;
-    this.isPreviewRotating = false;
-    this.lastRotateInputTime = 0;
-    this.state = "WAITING";
-    return true;
-  }
+  this.currentBlock = null;
+  this.previewFallMultiplier = 1;
+  this.isPreviewRotating = false;
+  this.lastRotateInputTime = 0;
+  this.state = "WAITING";
+  return true;
+}
 
   autoCommitPreviewAtCurrentPosition() {
     if (!this.currentBlock) return false;
@@ -1086,12 +1087,28 @@ applySettleSnap(block) {
     },
     true
   );
-  block.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-  block.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+  const lv = block.body.linvel();
+  const av = block.body.angvel();
 
-  if (typeof block.body.sleep === "function") {
-    block.body.sleep();
-  }
+  block.body.setLinvel(
+    {
+      x: lv.x * 0.25,
+      y: Math.max(-0.005, Math.min(0.005, lv.y * 0.1)),
+      z: lv.z * 0.25,
+    },
+    true
+  );
+
+  block.body.setAngvel(
+    {
+      x: av.x * 0.5,
+      y: av.y * 0.5,
+      z: av.z * 0.5,
+    },
+    true
+  );
+
+  // 즉시 sleep 금지
 
   block.snapApplied = true;
   block.snapIntent = {

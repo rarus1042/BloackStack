@@ -15,9 +15,9 @@ export class Renderer {
       60,
       window.innerWidth / window.innerHeight,
       0.1,
-      1000
+      2000
     );
-    this.camera.position.set(8, 15, 23);
+    this.camera.position.set(8.4, 6.4, 8.4);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -63,100 +63,102 @@ export class Renderer {
 
     document.body.appendChild(canvas);
 
-this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-this.controls.enableDamping = true;
-this.controls.dampingFactor = 0.08;
-this.controls.enablePan = false;
-this.controls.enableZoom = false; // 기본 wheel dolly 비활성화
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.enablePan = false;
+    this.controls.enableZoom = false;
+    this.controls.screenSpacePanning = false;
 
-this.cameraZoomLerp = options.cameraZoomLerp ?? 0.22;
-this.cameraZoomWheelStep = options.cameraZoomWheelStep ?? 1.2;
-this.cameraMinDistance = options.cameraMinDistance ?? 4.5;
-this.cameraMaxDistance = options.cameraMaxDistance ?? 26.0;
+    this.cameraZoomLerp = options.cameraZoomLerp ?? 0.22;
+    this.cameraZoomWheelStep = options.cameraZoomWheelStep ?? 1.2;
+    this.cameraMinDistance = options.cameraMinDistance ?? 4.5;
+    this.cameraMaxDistance = options.cameraMaxDistance ?? 26.0;
 
-this.targetZoomDistance = this.camera.position.distanceTo(this.controls.target);
-this.currentZoomDistance = this.targetZoomDistance;
+    this.cameraFollowLerp = options.cameraFollowLerp ?? 0.12;
+    this.cameraHeightOffset = options.cameraHeightOffset ?? 0.25;
+    this.cameraMinTargetY = options.cameraMinTargetY ?? 0.85;
+    this.heightStep = options.heightStep ?? 0.5;
 
-this.onManualWheelZoom = (event) => {
-  event.preventDefault();
-
-  const direction = Math.sign(event.deltaY);
-  if (direction === 0) return;
-
-  const zoomStep = this.cameraZoomWheelStep;
-  const nextDistance =
-    this.targetZoomDistance + (direction > 0 ? zoomStep : -zoomStep);
-
-  this.targetZoomDistance = THREE.MathUtils.clamp(
-    nextDistance,
-    this.cameraMinDistance,
-    this.cameraMaxDistance
-  );
-
-  this.isUserZooming = true;
-  this.lastManualCameraInputTime = performance.now();
-};
-
-this.renderer.domElement.addEventListener("wheel", this.onManualWheelZoom, {
-  passive: false,
-});
-this.controls.enablePan = false;
-this.controls.screenSpacePanning = false;
-
-this.cameraFollowLerp = options.cameraFollowLerp ?? 0.12;
-this.cameraHeightOffset = options.cameraHeightOffset ?? 0.25;
-this.cameraMinTargetY = options.cameraMinTargetY ?? 0.85;
-this.heightStep = options.heightStep ?? 0.5;
-
-this.defaultCameraPosition = new THREE.Vector3(8.4, 6.4, 8.4);
-this.defaultTarget = new THREE.Vector3(0, this.cameraMinTargetY, 0);
-this.controls.target.copy(this.defaultTarget);
-
-this.cameraBaseOffset = this.defaultCameraPosition.clone().sub(this.defaultTarget);
-this.trackedHeightStep = 0;
-this.trackedHeightStep = 0;
-this.cameraTrackedHeight = 0;
-this.cameraHeightDeadZone = options.cameraHeightDeadZone ?? 0.18;
-
-this.cameraAutoFollowSuspendMs = options.cameraAutoFollowSuspendMs ?? 280;
-this.lastManualCameraInputTime = -Infinity;
-this.isUserOrbiting = false;
-this.isUserZooming = false;
-this.lastCameraDistance = this.camera.position.distanceTo(this.controls.target);
-
-this.onControlsStart = () => {
-  this.isUserOrbiting = true;
-  this.lastManualCameraInputTime = performance.now();
-};
-
-this.onControlsEnd = () => {
-  this.isUserOrbiting = false;
-  this.lastManualCameraInputTime = performance.now();
-};
-
-this.onControlsChange = () => {
-  const now = performance.now();
-  const currentDistance = this.camera.position.distanceTo(this.controls.target);
-
-  if (Math.abs(currentDistance - this.lastCameraDistance) > 1e-4) {
-    this.isUserZooming = true;
-  }
-
-  this.lastCameraDistance = currentDistance;
-  this.lastManualCameraInputTime = now;
-};
-
-this.controls.addEventListener("start", this.onControlsStart);
-this.controls.addEventListener("end", this.onControlsEnd);
-this.controls.addEventListener("change", this.onControlsChange);
-
+    this.defaultCameraPosition = new THREE.Vector3(8.4, 6.4, 8.4);
+    this.defaultTarget = new THREE.Vector3(0, this.cameraMinTargetY, 0);
+    this.controls.target.copy(this.defaultTarget);
 
     this.cameraBaseOffset = this.defaultCameraPosition.clone().sub(this.defaultTarget);
+
+    this.trackedHeightStep = 0;
+    this.cameraTrackedHeight = 0;
+    this.cameraHeightDeadZone = options.cameraHeightDeadZone ?? 0.18;
+
+    this.cameraPositionFollowLerp = options.cameraPositionFollowLerp ?? 0.085;
+    this.cameraPositionHeightDeadZone = options.cameraPositionHeightDeadZone ?? 0.75;
+    this.cameraMinPositionY = this.defaultCameraPosition.y;
+    this.cameraPositionYOffset = options.cameraPositionYOffset ?? 5.6;
+
     this.cameraCurrentMode = "follow";
-    this.cameraFailLerp = options.cameraFailLerp ?? 0.055;
+    this.cameraFailLerp = options.cameraFailLerp ?? 0.06;
     this.cameraFollowMinDistance = options.cameraFollowMinDistance ?? 8.4;
-    this.cameraFailDistanceMultiplier = options.cameraFailDistanceMultiplier ?? 1.9;
-    this.cameraFailHeightPadding = options.cameraFailHeightPadding ?? 3.8;
+    this.cameraFailDistanceMultiplier = options.cameraFailDistanceMultiplier ?? 2.5;
+    this.cameraFailHeightPadding = options.cameraFailHeightPadding ?? 7.5;
+
+    this.targetZoomDistance = this.camera.position.distanceTo(this.controls.target);
+    this.currentZoomDistance = this.targetZoomDistance;
+    this.lastCameraDistance = this.targetZoomDistance;
+
+    this.cameraAutoFollowSuspendMs = options.cameraAutoFollowSuspendMs ?? 280;
+    this.lastManualCameraInputTime = -Infinity;
+    this.isUserOrbiting = false;
+    this.isUserZooming = false;
+
+    this.onManualWheelZoom = (event) => {
+      event.preventDefault();
+
+      const direction = Math.sign(event.deltaY);
+      if (direction === 0) return;
+
+      const zoomStep = this.cameraZoomWheelStep;
+      const nextDistance =
+        this.targetZoomDistance + (direction > 0 ? zoomStep : -zoomStep);
+
+      this.targetZoomDistance = THREE.MathUtils.clamp(
+        nextDistance,
+        this.cameraMinDistance,
+        this.cameraMaxDistance
+      );
+
+      this.isUserZooming = true;
+      this.lastManualCameraInputTime = performance.now();
+    };
+
+    this.renderer.domElement.addEventListener("wheel", this.onManualWheelZoom, {
+      passive: false,
+    });
+
+    this.onControlsStart = () => {
+      this.isUserOrbiting = true;
+      this.lastManualCameraInputTime = performance.now();
+    };
+
+    this.onControlsEnd = () => {
+      this.isUserOrbiting = false;
+      this.lastManualCameraInputTime = performance.now();
+    };
+
+    this.onControlsChange = () => {
+      const now = performance.now();
+      const currentDistance = this.camera.position.distanceTo(this.controls.target);
+
+      if (Math.abs(currentDistance - this.lastCameraDistance) > 1e-4) {
+        this.isUserZooming = true;
+      }
+
+      this.lastCameraDistance = currentDistance;
+      this.lastManualCameraInputTime = now;
+    };
+
+    this.controls.addEventListener("start", this.onControlsStart);
+    this.controls.addEventListener("end", this.onControlsEnd);
+    this.controls.addEventListener("change", this.onControlsChange);
 
     this.groundMesh = null;
     this.rimMesh = null;
@@ -364,7 +366,9 @@ this.controls.addEventListener("change", this.onControlsChange);
     this.groundMesh.castShadow = false;
     this.scene.add(this.groundMesh);
 
-    const edgeGeom = new THREE.EdgesGeometry(new THREE.BoxGeometry(size, thickness + 0.01, size));
+    const edgeGeom = new THREE.EdgesGeometry(
+      new THREE.BoxGeometry(size, thickness + 0.01, size)
+    );
     const edgeMat = new THREE.LineBasicMaterial({
       color: 0xf2f5ea,
       transparent: true,
@@ -382,107 +386,111 @@ this.controls.addEventListener("change", this.onControlsChange);
     return Math.floor(height / step) * step;
   }
 
-updateCamera(height = 0) {
-  const desiredHeight = Math.max(0, height);
+  updateCamera(height = 0) {
+    const desiredHeight = Math.max(0, height);
 
-  // 너무 미세한 높이 변화는 무시해서 덜덜거림 방지
-  if (
-    desiredHeight > this.cameraTrackedHeight + this.cameraHeightDeadZone
-  ) {
-    this.cameraTrackedHeight = desiredHeight;
+    if (desiredHeight > this.cameraTrackedHeight + this.cameraHeightDeadZone) {
+      this.cameraTrackedHeight = desiredHeight;
+    }
+
+    const targetY = Math.max(
+      this.cameraMinTargetY,
+      this.cameraTrackedHeight + this.cameraHeightOffset
+    );
+
+    this.controls.target.y = THREE.MathUtils.lerp(
+      this.controls.target.y,
+      targetY,
+      this.cameraFollowLerp
+    );
+
+    const desiredCameraY = Math.max(
+      this.cameraMinPositionY,
+      this.cameraTrackedHeight + this.cameraPositionYOffset
+    );
+
+    if (desiredCameraY > this.camera.position.y + this.cameraPositionHeightDeadZone) {
+      this.camera.position.y = THREE.MathUtils.lerp(
+        this.camera.position.y,
+        desiredCameraY,
+        this.cameraPositionFollowLerp
+      );
+    }
   }
 
-  const targetY = Math.max(
-    this.cameraMinTargetY,
-    this.cameraTrackedHeight + this.cameraHeightOffset
-  );
+  resetCamera() {
+    this.trackedHeightStep = 0;
+    this.cameraTrackedHeight = 0;
+    this.isUserOrbiting = false;
+    this.isUserZooming = false;
+    this.lastManualCameraInputTime = -Infinity;
 
-  this.controls.target.y = THREE.MathUtils.lerp(
-    this.controls.target.y,
-    targetY,
-    this.cameraFollowLerp
-  );
-}
-resetCamera() {
-  this.trackedHeightStep = 0;
-  this.cameraTrackedHeight = 0;
-  this.isUserOrbiting = false;
-  this.isUserZooming = false;
-  this.lastManualCameraInputTime = -Infinity;
+    this.camera.position.copy(this.defaultCameraPosition);
+    this.controls.target.copy(this.defaultTarget);
 
-  this.camera.position.copy(this.defaultCameraPosition);
-  this.controls.target.copy(this.defaultTarget);
+    this.currentZoomDistance = this.camera.position.distanceTo(this.controls.target);
+    this.targetZoomDistance = this.currentZoomDistance;
+    this.lastCameraDistance = this.currentZoomDistance;
 
-  this.currentZoomDistance = this.camera.position.distanceTo(this.controls.target);
-  this.targetZoomDistance = this.currentZoomDistance;
-  this.lastCameraDistance = this.currentZoomDistance;
+    this.controls.update();
+  }
 
-  this.controls.update();
-}
+  updateFailureCamera(bounds, dt = 0.016) {
+    if (!bounds) return;
 
-   updateFailureCamera(bounds, dt = 0.016) {
-  if (!bounds) return;
+    const min = bounds.min;
+    const max = bounds.max;
+    const center = bounds.center;
 
-  const min = bounds.min;
-  const max = bounds.max;
-  const center = bounds.center;
+    const sizeX = Math.max(1, max.x - min.x);
+    const sizeY = Math.max(1, max.y - min.y);
+    const sizeZ = Math.max(1, max.z - min.z);
 
-  const sizeX = Math.max(1, max.x - min.x);
-  const sizeY = Math.max(1, max.y - min.y);
-  const sizeZ = Math.max(1, max.z - min.z);
+    const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
+    const aspect = Math.max(0.35, this.camera.aspect || 1);
 
-  const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
-  const aspect = Math.max(0.35, this.camera.aspect || 1);
+    const fitHeightDistance = (sizeY * 0.5) / Math.tan(fovRad * 0.5);
+    const fitWidthDistance = ((sizeX * 0.5) / Math.tan(fovRad * 0.5)) / aspect;
 
-  const fitHeightDistance = (sizeY * 0.5) / Math.tan(fovRad * 0.5);
-  const fitWidthDistance =
-    ((sizeX * 0.5) / Math.tan(fovRad * 0.5)) / aspect;
+    const footprint = Math.max(sizeX, sizeZ);
+    const diagonal = Math.sqrt(sizeX * sizeX + sizeY * sizeY + sizeZ * sizeZ);
 
-  const footprint = Math.max(sizeX, sizeZ);
-  const diagonal = Math.sqrt(sizeX * sizeX + sizeY * sizeY + sizeZ * sizeZ);
+    const baseDistance = Math.max(
+      14,
+      fitHeightDistance,
+      fitWidthDistance,
+      sizeZ * 1.2,
+      footprint * 1.0,
+      diagonal * 0.72
+    );
 
-  // 기존 fit 거리
-  const baseDistance = Math.max(
-    10,
-    fitHeightDistance,
-    fitWidthDistance,
-    sizeZ * 0.9,
-    footprint * 0.8,
-    diagonal * 0.55
-  );
+    const heightBackoff = sizeY * 1.35;
+    const footprintBackoff = footprint * 0.45;
 
-  // 높이가 높을수록 더 멀리서 보게 추가 후퇴
-  const heightBackoff = sizeY * 0.85;
+    const desiredDistance =
+      baseDistance + heightBackoff + footprintBackoff + this.cameraFailHeightPadding;
 
-  // 바닥 넓이도 조금 반영해서 좌우 여유 확보
-  const footprintBackoff = footprint * 0.35;
+    const desiredTarget = new THREE.Vector3(
+      center.x,
+      min.y + sizeY * 0.5,
+      center.z
+    );
 
-  const desiredDistance = baseDistance + heightBackoff + footprintBackoff + 4.0;
+    const desiredCameraY =
+      min.y + sizeY * 0.82 + Math.max(3.2, sizeY * 0.28);
 
-  const desiredTarget = new THREE.Vector3(
-    center.x,
-    min.y + sizeY * 0.52,
-    center.z
-  );
+    const desiredCamera = new THREE.Vector3(
+      center.x,
+      desiredCameraY,
+      center.z + desiredDistance
+    );
 
-  // 높이가 커질수록 카메라도 같이 올라가게
-  const desiredCameraY =
-    min.y +
-    sizeY * 0.68 +
-    Math.max(1.6, sizeY * 0.22);
+    const t =
+      1 - Math.pow(1 - (this.cameraFailLerp ?? 0.06), Math.max(1, dt * 60));
 
-  const desiredCamera = new THREE.Vector3(
-    center.x,
-    desiredCameraY,
-    center.z + desiredDistance
-  );
-
-  const t =
-    1 - Math.pow(1 - (this.cameraFailLerp ?? 0.14), Math.max(1, dt * 60));
-
-  this.controls.target.lerp(desiredTarget, t);
-  this.camera.position.lerp(desiredCamera, t);
-}
+    this.controls.target.lerp(desiredTarget, t);
+    this.camera.position.lerp(desiredCamera, t);
+  }
 
   spawnLandingEffect(position, options = {}) {
     const radius = options.radius ?? 0.48;
@@ -547,72 +555,47 @@ resetCamera() {
       if (t >= 1) {
         this.scene.remove(fx.root);
         fx.root.traverse((obj) => {
-          if (obj.geometry) obj.geometry.dispose();
-          if (obj.material) obj.material.dispose();
+          if (obj.geometry) obj.geometry.dispose?.();
+          if (obj.material) obj.material.dispose?.();
         });
         this.landingEffects.splice(i, 1);
       }
     }
   }
 
-update(dt = 0.016) {
-  this.controls.update();
+  update(dt = 0.016) {
+    this.controls.update();
 
-  // 커스텀 줌 lerp
-  const offset = this.camera.position.clone().sub(this.controls.target);
-  const offsetLengthSq = offset.lengthSq();
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const offsetLengthSq = offset.lengthSq();
 
-  if (offsetLengthSq > 1e-8) {
-    const lookDir = offset.normalize();
+    if (offsetLengthSq > 1e-8) {
+      const lookDir = offset.normalize();
 
-    this.currentZoomDistance = THREE.MathUtils.lerp(
-      this.currentZoomDistance,
-      this.targetZoomDistance,
-      this.cameraZoomLerp ?? 0.22
-    );
+      this.currentZoomDistance = THREE.MathUtils.lerp(
+        this.currentZoomDistance,
+        this.targetZoomDistance,
+        this.cameraZoomLerp ?? 0.22
+      );
 
-    this.camera.position.copy(
-      this.controls.target.clone().add(lookDir.multiplyScalar(this.currentZoomDistance))
-    );
+      this.camera.position.copy(
+        this.controls.target.clone().add(lookDir.multiplyScalar(this.currentZoomDistance))
+      );
 
-    this.lastCameraDistance = this.currentZoomDistance;
-  }
-
-  // 사용자 줌 상태 해제
-  if (
-    !this.isUserOrbiting &&
-    performance.now() - this.lastManualCameraInputTime >= this.cameraAutoFollowSuspendMs
-  ) {
-    if (Math.abs(this.currentZoomDistance - this.targetZoomDistance) < 0.01) {
-      this.isUserZooming = false;
-    }
-  }
-
-  for (let i = this.landingEffects.length - 1; i >= 0; i--) {
-    const effect = this.landingEffects[i];
-    effect.life -= dt;
-
-    if (effect.life <= 0) {
-      this.scene.remove(effect.root);
-      effect.root.traverse((obj) => {
-        if (obj.geometry) obj.geometry.dispose?.();
-        if (obj.material) obj.material.dispose?.();
-      });
-      this.landingEffects.splice(i, 1);
-      continue;
+      this.lastCameraDistance = this.currentZoomDistance;
     }
 
-    const t = 1 - effect.life / effect.maxLife;
-    effect.root.scale.setScalar(1 + t * 0.9);
-
-    for (const child of effect.root.children) {
-      if (child.material) {
-        child.material.opacity =
-          child === effect.ring ? (1 - t) * 0.72 : (1 - t) * 0.16;
+    if (
+      !this.isUserOrbiting &&
+      performance.now() - this.lastManualCameraInputTime >= this.cameraAutoFollowSuspendMs
+    ) {
+      if (Math.abs(this.currentZoomDistance - this.targetZoomDistance) < 0.01) {
+        this.isUserZooming = false;
       }
     }
+
+    this.updateLandingEffects(dt);
   }
-}
 
   render() {
     const w = window.innerWidth;
