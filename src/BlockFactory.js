@@ -10,6 +10,8 @@ export class BlockFactory {
     this.blockSize = options.blockSize ?? 1;
     this.cellSize = options.cellSize ?? this.blockSize;
     this.visualCellScale = options.visualCellScale ?? 0.94;
+    this.collisionCellScale = options.collisionCellScale ?? 0.94;
+    this.settleCellScale = options.settleCellScale ?? 0.985;
 
     this.slowFallSpeed = options.slowFallSpeed ?? 0.75;
     this.fastFallSpeed = options.fastFallSpeed ?? 5.5;
@@ -217,106 +219,101 @@ export class BlockFactory {
   }
 
   buildShapeData(entry) {
-  const halfExtent = this.cellSize / 2;
+    const halfExtent = this.cellSize / 2;
+    const colliderHalfExtent = halfExtent * this.collisionCellScale;
+    const settleHalfExtent = halfExtent * this.settleCellScale;
 
-  // 기존 0.94보다 조금 더 줄여서
-  // 보이는 블럭보다 살짝 작게 충돌하게 만듦
-  const colliderHalfExtent = halfExtent * 0.94;
+    const rawCellOffsets = entry.cells.map(([x, y, z]) => ({
+      x: x * this.cellSize,
+      y: y * this.cellSize,
+      z: z * this.cellSize,
+    }));
 
-  const rawCellOffsets = entry.cells.map(([x, y, z]) => ({
-    x: x * this.cellSize,
-    y: y * this.cellSize,
-    z: z * this.cellSize,
-  }));
+    let centerMinX = Infinity;
+    let centerMaxX = -Infinity;
+    let centerMinY = Infinity;
+    let centerMaxY = -Infinity;
+    let centerMinZ = Infinity;
+    let centerMaxZ = -Infinity;
 
-  let centerMinX = Infinity;
-  let centerMaxX = -Infinity;
-  let centerMinY = Infinity;
-  let centerMaxY = -Infinity;
-  let centerMinZ = Infinity;
-  let centerMaxZ = -Infinity;
-
-  for (const c of rawCellOffsets) {
-    if (c.x < centerMinX) centerMinX = c.x;
-    if (c.x > centerMaxX) centerMaxX = c.x;
-    if (c.y < centerMinY) centerMinY = c.y;
-    if (c.y > centerMaxY) centerMaxY = c.y;
-    if (c.z < centerMinZ) centerMinZ = c.z;
-    if (c.z > centerMaxZ) centerMaxZ = c.z;
-  }
-
-  const shapeCenter = {
-    x: (centerMinX + centerMaxX) * 0.5,
-    y: (centerMinY + centerMaxY) * 0.5,
-    z: (centerMinZ + centerMaxZ) * 0.5,
-  };
-
-  let anchor = rawCellOffsets[0];
-  let bestDist2 = Infinity;
-  let bestTie = Infinity;
-
-  for (const c of rawCellOffsets) {
-    const dx = c.x - shapeCenter.x;
-    const dy = c.y - shapeCenter.y;
-    const dz = c.z - shapeCenter.z;
-
-    const dist2 = dx * dx + dy * dy + dz * dz;
-
-    const tie =
-      Math.abs(dy) * 10000 +
-      Math.abs(dx) * 100 +
-      Math.abs(dz);
-
-    if (
-      dist2 < bestDist2 - 1e-9 ||
-      (Math.abs(dist2 - bestDist2) <= 1e-9 && tie < bestTie)
-    ) {
-      bestDist2 = dist2;
-      bestTie = tie;
-      anchor = c;
+    for (const c of rawCellOffsets) {
+      if (c.x < centerMinX) centerMinX = c.x;
+      if (c.x > centerMaxX) centerMaxX = c.x;
+      if (c.y < centerMinY) centerMinY = c.y;
+      if (c.y > centerMaxY) centerMaxY = c.y;
+      if (c.z < centerMinZ) centerMinZ = c.z;
+      if (c.z > centerMaxZ) centerMaxZ = c.z;
     }
+
+    const shapeCenter = {
+      x: (centerMinX + centerMaxX) * 0.5,
+      y: (centerMinY + centerMaxY) * 0.5,
+      z: (centerMinZ + centerMaxZ) * 0.5,
+    };
+
+    let anchor = rawCellOffsets[0];
+    let bestDist2 = Infinity;
+    let bestTie = Infinity;
+
+    for (const c of rawCellOffsets) {
+      const dx = c.x - shapeCenter.x;
+      const dy = c.y - shapeCenter.y;
+      const dz = c.z - shapeCenter.z;
+
+      const dist2 = dx * dx + dy * dy + dz * dz;
+      const tie = Math.abs(dy) * 10000 + Math.abs(dx) * 100 + Math.abs(dz);
+
+      if (
+        dist2 < bestDist2 - 1e-9 ||
+        (Math.abs(dist2 - bestDist2) <= 1e-9 && tie < bestTie)
+      ) {
+        bestDist2 = dist2;
+        bestTie = tie;
+        anchor = c;
+      }
+    }
+
+    const cellOffsets = rawCellOffsets.map((c) => ({
+      x: c.x - anchor.x,
+      y: c.y - anchor.y,
+      z: c.z - anchor.z,
+    }));
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    let footprintRadius = 0;
+
+    for (const c of cellOffsets) {
+      minX = Math.min(minX, c.x - colliderHalfExtent);
+      maxX = Math.max(maxX, c.x + colliderHalfExtent);
+      minY = Math.min(minY, c.y - colliderHalfExtent);
+      maxY = Math.max(maxY, c.y + colliderHalfExtent);
+      minZ = Math.min(minZ, c.z - colliderHalfExtent);
+      maxZ = Math.max(maxZ, c.z + colliderHalfExtent);
+
+      const r = Math.hypot(c.x, c.z) + colliderHalfExtent;
+      if (r > footprintRadius) footprintRadius = r;
+    }
+
+    return {
+      key: entry.key,
+      name: entry.name,
+      color: entry.color,
+      weight: entry.weight,
+      cellOffsets,
+      halfExtent,
+      colliderHalfExtent,
+      settleHalfExtent,
+      halfHeight: (maxY - minY) * 0.5,
+      footprintRadius,
+      anchorCellOffset: { x: 0, y: 0, z: 0 },
+      bounds: { minX, maxX, minY, maxY, minZ, maxZ },
+    };
   }
-
-  const cellOffsets = rawCellOffsets.map((c) => ({
-    x: c.x - anchor.x,
-    y: c.y - anchor.y,
-    z: c.z - anchor.z,
-  }));
-
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  let minZ = Infinity;
-  let maxZ = -Infinity;
-  let footprintRadius = 0;
-
-  for (const c of cellOffsets) {
-    minX = Math.min(minX, c.x - colliderHalfExtent);
-    maxX = Math.max(maxX, c.x + colliderHalfExtent);
-    minY = Math.min(minY, c.y - colliderHalfExtent);
-    maxY = Math.max(maxY, c.y + colliderHalfExtent);
-    minZ = Math.min(minZ, c.z - colliderHalfExtent);
-    maxZ = Math.max(maxZ, c.z + colliderHalfExtent);
-
-    const r = Math.hypot(c.x, c.z) + colliderHalfExtent;
-    if (r > footprintRadius) footprintRadius = r;
-  }
-
-  return {
-    key: entry.key,
-    name: entry.name,
-    color: entry.color,
-    weight: entry.weight,
-    cellOffsets,
-    halfExtent,
-    colliderHalfExtent,
-    halfHeight: (maxY - minY) * 0.5,
-    footprintRadius,
-    anchorCellOffset: { x: 0, y: 0, z: 0 },
-    bounds: { minX, maxX, minY, maxY, minZ, maxZ },
-  };
-}
 
   addOutlineToMesh(mesh, isPreview = false) {
     if (!mesh?.geometry) return;
@@ -467,6 +464,8 @@ export class BlockFactory {
       landingStartTime: null,
       committed: false,
       primaryColor: entry.color,
+      snapApplied: false,
+      snapIntent: null,
     };
   }
 
@@ -488,6 +487,8 @@ export class BlockFactory {
     block.landingStartY = null;
     block.landingStartTime = null;
     block.committed = false;
+    block.snapApplied = false;
+    block.snapIntent = null;
 
     return block;
   }

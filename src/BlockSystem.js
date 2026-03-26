@@ -49,11 +49,18 @@ export class BlockSystem {
     this.worldAxisY = new THREE.Vector3(0, 1, 0);
     this.worldAxisZ = new THREE.Vector3(0, 0, 1);
 
-    this.tmpVecA = new THREE.Vector3();
-    this.tmpVecB = new THREE.Vector3();
-    this.tmpVecC = new THREE.Vector3();
+this.tmpVecA = new THREE.Vector3();
+this.tmpVecB = new THREE.Vector3();
+this.tmpVecC = new THREE.Vector3();
+this.tmpVecD = new THREE.Vector3();
 
-    this.predictionCoarsePos = new THREE.Vector3();
+this.predictionCoarsePos = new THREE.Vector3();
+
+this.settleGapSlack = options.settleGapSlack ?? 0.12;
+this.settleSnapHorizontalTolerance = options.settleSnapHorizontalTolerance ?? 0.38;
+this.settleSnapRotationDotMin = options.settleSnapRotationDotMin ?? 0.9;
+this.settleSupportBias = options.settleSupportBias ?? 0.16;
+this.snapQuaternions = this.buildRightAngleQuaternionSet();
 
     this.isPreviewRotating = false;
     this.lastRotateInputTime = 0;
@@ -63,15 +70,16 @@ export class BlockSystem {
     this.landingMoveWindowMs = options.landingMoveWindowMs ?? 380;
     this.landingRotateWindowMs = options.landingRotateWindowMs ?? 420;
 
-    this.factory = new BlockFactory(scene, physics, {
-      blockSize: this.blockSize,
-      cellSize: this.gridStep,
-      slowFallSpeed: this.slowFallSpeed,
-      fastFallSpeed: this.fastFallSpeed,
-      linearDamping: 2.2,
-      angularDamping: 6.3,
-    });
-
+this.factory = new BlockFactory(scene, physics, {
+  blockSize: this.blockSize,
+  cellSize: this.gridStep,
+  collisionCellScale: 0.94,
+  settleCellScale: 0.985,
+  slowFallSpeed: this.slowFallSpeed,
+  fastFallSpeed: this.fastFallSpeed,
+  linearDamping: 2.2,
+  angularDamping: 6.3,
+});
     this.monitor = new StructureMonitor({
       stageSize: this.stageSize,
       failY: this.failY,
@@ -117,6 +125,85 @@ export class BlockSystem {
   getPreviewFallSpeedMultiplier() {
     return this.isSlowLandingMode() ? this.rotateFallMultiplier : 1;
   }
+
+ buildRightAngleQuaternionSet() {
+  const axes = [
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 1),
+  ];
+
+  const visited = new Map();
+  const queue = [new THREE.Quaternion()];
+  const result = [];
+
+  const keyOf = (q) =>
+    [
+      Math.round(q.x * 1000),
+      Math.round(q.y * 1000),
+      Math.round(q.z * 1000),
+      Math.round(q.w * 1000),
+    ].join(",");
+
+  const negated = (q) =>
+    new THREE.Quaternion(-q.x, -q.y, -q.z, -q.w);
+
+  while (queue.length) {
+    const current = queue.shift().clone().normalize();
+
+    const variantA = current;
+    const variantB = negated(current);
+
+    const keyA = keyOf(variantA);
+    const keyB = keyOf(variantB);
+    const canonicalKey = keyA < keyB ? keyA : keyB;
+
+    if (visited.has(canonicalKey)) continue;
+    visited.set(canonicalKey, true);
+    result.push(current.clone());
+
+    for (const axis of axes) {
+      const delta = new THREE.Quaternion().setFromAxisAngle(axis, Math.PI / 2);
+      const next = delta.clone().multiply(current).normalize();
+      queue.push(next);
+    }
+  }
+
+  return result;
+}
+
+getNearestRightAngleQuaternion(quaternion) {
+  let best = this.snapQuaternions[0]?.clone() ?? new THREE.Quaternion();
+  let bestDot = -Infinity;
+
+  for (const candidate of this.snapQuaternions) {
+    const dot = Math.abs(candidate.dot(quaternion));
+    if (dot > bestDot) {
+      bestDot = dot;
+      best = candidate;
+    }
+  }
+
+  return {
+    quaternion: best.clone(),
+    dot: bestDot,
+  };
+}
+
+getShapeHalfExtent(shapeData, mode = "collision") {
+  if (!shapeData) return this.gridStep * 0.5;
+
+  if (mode === "settle") {
+    return (
+      shapeData.settleHalfExtent ??
+      shapeData.colliderHalfExtent ??
+      shapeData.halfExtent ??
+      this.gridStep * 0.5
+    );
+  }
+
+  return shapeData.colliderHalfExtent ?? shapeData.halfExtent ?? this.gridStep * 0.5;
+}
 
   getGridStep() {
     return this.gridStep;
@@ -797,6 +884,233 @@ return {
   };
 }
 
+computeSupportPlan(block, position, quaternion) {
+  const shapeData = block?.collision;
+  if (!shapeData?.cellOffsets?.length) {
+    return null;
+  }
+
+  const half = this.getShapeHalfExtent(shapeData, "settle");
+  const worldCells = this.getWorldCellCenters(position, quaternion, shapeData);
+  const supportThreshold = this.gridStep * 0.18;
+  const maxGapForSupport = this.settleGapSlack + this.settleSupportBias;
+
+  let targetY = -Infinity;
+  let supportCount = 0;
+  let weightedSupportX = 0;
+  let weightedSupportZ = 0;
+  const supportCells = [];
+
+  for (let i = 0; i < worldCells.length; i++) {
+    const cell = worldCells[i];
+    const offset = shapeData.cellOffsets[i];
+
+    let bestTop = 0;
+    let bestSupportPoint = new THREE.Vector3(cell.x, 0, cell.z);
+
+    for (const other of this.blocks) {
+      if (!other || other === block) continue;
+      if (other.state === "preview") continue;
+      if (!other.collision?.cellOffsets?.length) continue;
+
+      const otherPosRaw = other.body.translation();
+      const otherRotRaw = other.body.rotation();
+
+      const otherPos = new THREE.Vector3(otherPosRaw.x, otherPosRaw.y, otherPosRaw.z);
+      const otherQuat = new THREE.Quaternion(
+        otherRotRaw.x,
+        otherRotRaw.y,
+        otherRotRaw.z,
+        otherRotRaw.w
+      );
+
+      const otherHalf = this.getShapeHalfExtent(other.collision, "settle");
+      const otherCells = this.getWorldCellCenters(otherPos, otherQuat, other.collision);
+
+      for (const otherCell of otherCells) {
+        if (
+          Math.abs(otherCell.x - cell.x) > supportThreshold ||
+          Math.abs(otherCell.z - cell.z) > supportThreshold
+        ) {
+          continue;
+        }
+
+        const top = otherCell.y + otherHalf;
+        const gap = cell.y - half - top;
+
+        if (gap < -0.08) continue;
+        if (gap > maxGapForSupport) continue;
+
+        if (top > bestTop) {
+          bestTop = top;
+          bestSupportPoint = new THREE.Vector3(otherCell.x, top, otherCell.z);
+        }
+      }
+    }
+
+    const requiredCenterY = bestTop + half - offset.y;
+    if (requiredCenterY > targetY) {
+      targetY = requiredCenterY;
+    }
+
+    const gapToChosenSupport = cell.y - half - bestTop;
+    if (bestTop > 0 || gapToChosenSupport <= maxGapForSupport) {
+      if (Math.abs(gapToChosenSupport) <= maxGapForSupport) {
+        supportCount += 1;
+        weightedSupportX += bestSupportPoint.x;
+        weightedSupportZ += bestSupportPoint.z;
+        supportCells.push(bestSupportPoint);
+      }
+    }
+  }
+
+  if (!Number.isFinite(targetY)) {
+    return null;
+  }
+
+  const supportCenter =
+    supportCount > 0
+      ? new THREE.Vector3(
+          weightedSupportX / supportCount,
+          targetY - half,
+          weightedSupportZ / supportCount
+        )
+      : new THREE.Vector3(position.x, targetY - half, position.z);
+
+  return {
+    targetY,
+    supportCount,
+    supportCenter,
+    supportCells,
+  };
+}
+
+shouldApplySettleSnap(
+  block,
+  currentPosition,
+  currentQuaternion,
+  snapPosition,
+  snapQuaternion,
+  supportPlan
+) {
+  if (!supportPlan) return false;
+
+  const horizontalError = Math.hypot(
+    currentPosition.x - snapPosition.x,
+    currentPosition.z - snapPosition.z
+  );
+
+  if (horizontalError > this.settleSnapHorizontalTolerance) {
+    return false;
+  }
+
+  const verticalError = Math.abs(currentPosition.y - snapPosition.y);
+  if (verticalError > Math.max(0.24, this.gridStep * 0.35)) {
+    return false;
+  }
+
+  const rotationDot = Math.abs(currentQuaternion.dot(snapQuaternion));
+  if (rotationDot < this.settleSnapRotationDotMin) {
+    return false;
+  }
+
+  if (supportPlan.supportCount <= 0) {
+    return false;
+  }
+
+  const centerOffset = Math.hypot(
+    snapPosition.x - supportPlan.supportCenter.x,
+    snapPosition.z - supportPlan.supportCenter.z
+  );
+
+  if (supportPlan.supportCount === 1 && centerOffset > this.gridStep * 0.55) {
+    return false;
+  }
+
+  if (supportPlan.supportCount === 2 && centerOffset > this.gridStep * 0.9) {
+    return false;
+  }
+
+  return true;
+}
+
+applySettleSnap(block) {
+  if (!block || block.state !== "settled") return false;
+  if (block.snapApplied) return false;
+  if (!block.collision?.cellOffsets?.length) return false;
+
+  const posRaw = block.body.translation();
+  const rotRaw = block.body.rotation();
+
+  const currentPosition = new THREE.Vector3(posRaw.x, posRaw.y, posRaw.z);
+  const currentQuaternion = new THREE.Quaternion(rotRaw.x, rotRaw.y, rotRaw.z, rotRaw.w);
+
+  const snappedRotation = this.getNearestRightAngleQuaternion(currentQuaternion);
+  const snapQuaternion = snappedRotation.quaternion;
+  const snapPosition = this.clampGridPositionToStage(
+    new THREE.Vector3(
+      this.snapToGrid(currentPosition.x),
+      currentPosition.y,
+      this.snapToGrid(currentPosition.z)
+    )
+  );
+
+  const supportPlan = this.computeSupportPlan(block, snapPosition, snapQuaternion);
+  if (!supportPlan) {
+    block.snapApplied = true;
+    return false;
+  }
+
+  snapPosition.y = supportPlan.targetY;
+
+  if (
+    !this.shouldApplySettleSnap(
+      block,
+      currentPosition,
+      currentQuaternion,
+      snapPosition,
+      snapQuaternion,
+      supportPlan
+    )
+  ) {
+    block.snapApplied = true;
+    return false;
+  }
+
+  block.body.setRotation(snapQuaternion, true);
+  block.body.setTranslation(
+    {
+      x: snapPosition.x,
+      y: snapPosition.y,
+      z: snapPosition.z,
+    },
+    true
+  );
+  block.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+  block.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+
+  if (typeof block.body.sleep === "function") {
+    block.body.sleep();
+  }
+
+  block.snapApplied = true;
+  block.snapIntent = {
+    x: snapPosition.x,
+    y: snapPosition.y,
+    z: snapPosition.z,
+    supportCount: supportPlan.supportCount,
+  };
+
+  return true;
+}
+
+applySettleSnapToAll() {
+  for (const block of this.blocks) {
+    if (!block || block.state !== "settled") continue;
+    this.applySettleSnap(block);
+  }
+}
+
   canPlacePreviewAt(position, quaternion) {
     const block = this.getCurrentPreviewBlock();
     if (!block?.collision) return false;
@@ -967,24 +1281,25 @@ return {
     return true;
   }
 
-  update(dt = 0.016) {
-    if (this.currentBlock?.state === "preview" && this.state === "EDIT") {
-      this.updatePreviewAutoFall(dt);
-    }
-
-    this.monitor.updateDynamicBlocks(this.blocks, {
-      slowLanding: this.isSlowLandingMode(),
-    });
-
-    this.meshSync.sync(this.blocks);
-    this.updateHeights();
-    this.tryFinishCurrentLanding();
-    this.maybeSpawnNextBlock();
-
-    if (this.monitor.checkFail(this.blocks)) {
-      if (this.onFail) this.onFail();
-    }
+update(dt = 0.016) {
+  if (this.currentBlock?.state === "preview" && this.state === "EDIT") {
+    this.updatePreviewAutoFall(dt);
   }
+
+  this.monitor.updateDynamicBlocks(this.blocks, {
+    slowLanding: this.isSlowLandingMode(),
+  });
+
+  this.applySettleSnapToAll();
+  this.meshSync.sync(this.blocks);
+  this.updateHeights();
+  this.tryFinishCurrentLanding();
+  this.maybeSpawnNextBlock();
+
+  if (this.monitor.checkFail(this.blocks)) {
+    if (this.onFail) this.onFail();
+  }
+}
 
   reset() {
     for (const block of this.blocks) {

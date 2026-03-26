@@ -38,6 +38,7 @@ export class StructureMonitor {
     block.landingStartTime = null;
     block.jitterFrames = 0;
     block.prevPosForJitter = null;
+    block.snapApplied = false;
 
     block.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     block.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
@@ -56,6 +57,7 @@ export class StructureMonitor {
     block.landingStartTime = null;
     block.jitterFrames = 0;
     block.prevPosForJitter = null;
+    block.snapApplied = false;
   }
 
   refreshLandingWindow(block) {
@@ -68,6 +70,7 @@ export class StructureMonitor {
     block.landingStartY = pos.y;
     block.landingStartTime = performance.now();
     block.prevPosForJitter = { x: pos.x, y: pos.y, z: pos.z };
+    block.snapApplied = false;
   }
 
   updateDynamicBlocks(blocks, options = {}) {
