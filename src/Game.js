@@ -193,12 +193,11 @@ this.setupBgmUnlock();
       1.02
     );
 
-    const previewScale = THREE.MathUtils.clamp(
-      compactScale * (isLandscape && isMobile ? 0.82 : 0.92),
-      0.58,
-      1
-    );
-
+const previewScale = THREE.MathUtils.clamp(
+  compactScale * (isLandscape && isMobile ? 0.75 : 0.85),
+  0.4,   // 👈 최소 더 낮춤
+  0.8   // 👈 최대값 제한 (핵심)
+);
     const controlScale = THREE.MathUtils.clamp(
       compactScale * (isLandscape && isMobile ? 0.78 : 0.9),
       0.54,
@@ -345,23 +344,22 @@ this.setupBgmUnlock();
       };
     }
 
-    if (metrics.isMobile) {
-      return {
-        isMobile: true,
-        panelTop: 58,
-        panelRight: 10,
-        panelWidth: Math.round(148 + 18 * metrics.previewScale),
-        panelPadding: 9,
-        panelRadius: 16,
-        titleFont: 10,
-        canvasSize: Math.round(94 + 24 * metrics.previewScale),
-        canvasPixelSize: Math.round((94 + 24 * metrics.previewScale) * 2),
-        canvasRadius: 12,
-        nameFont: 10,
-        nameMinHeight: 18,
-      };
-    }
-
+if (metrics.isMobile) {
+  return {
+    isMobile: true,
+    panelTop: 56,
+    panelRight: 8,
+    panelWidth: Math.round(120 + 14 * metrics.previewScale), // 👈 줄임
+    panelPadding: 8,
+    panelRadius: 14,
+    titleFont: 9,
+    canvasSize: Math.round(78 + 18 * metrics.previewScale), // 👈 줄임
+    canvasPixelSize: Math.round((78 + 18 * metrics.previewScale) * 2),
+    canvasRadius: 10,
+    nameFont: 9,
+    nameMinHeight: 16,
+  };
+}
     return {
       isMobile: false,
       panelTop: 84,
