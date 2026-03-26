@@ -5,81 +5,221 @@ export class GizmoController {
     this.scene = scene;
     this.blockSize = options.blockSize ?? 1;
 
+    this.axisColors = {
+      x: 0xff5555,
+      y: 0x55ff88,
+      z: 0x5599ff,
+    };
+
     this.root = new THREE.Group();
-    this.root.visible = false;
-    this.root.renderOrder = 999;
     this.scene.add(this.root);
 
-    this.handles = {};
-    this.materials = {};
-    this.axisLines = {};
+    this.axisMeshes = {};
+    this.activeAxis = null;
 
-    this.ringRadius = this.blockSize * 0.95;
-    this.ringTube = Math.max(0.08, this.blockSize * 0.08);
+    this.tmpBox = new THREE.Box3();
+    this.tmpSize = new THREE.Vector3();
+    this.tmpCenter = new THREE.Vector3();
 
-    this.lockedAxis = null;
+    this.defaultRadius = this.blockSize * 1.75;
+    this.currentRadius = this.defaultRadius;
+    this.depth = Math.max(0.08, this.blockSize * 0.16);
 
-    this.createHandles();
-    this.setActiveAxis(null);
+    this.createGizmos();
+    this.hide();
   }
 
-  createRing(axis, color, rotation) {
-    const geometry = new THREE.TorusGeometry(
-      this.ringRadius,
-      this.ringTube,
-      16,
-      64
+ createArrowArcShape(radius) {
+  const startAngle = Math.PI * 0.30;
+  const endAngle = Math.PI * 1.78;
+
+  const bandWidth = Math.max(radius * 0.22, 0.26);
+  const outerR = radius + bandWidth * 0.5;
+  const innerR = Math.max(0.001, radius - bandWidth * 0.5);
+
+  const shape = new THREE.Shape();
+
+  // 바깥 호
+  shape.absarc(0, 0, outerR, startAngle, endAngle, false);
+
+  // 끝을 둥글게 이어서 안쪽 호로 복귀
+  const endOuterX = Math.cos(endAngle) * outerR;
+  const endOuterY = Math.sin(endAngle) * outerR;
+  const endInnerX = Math.cos(endAngle) * innerR;
+  const endInnerY = Math.sin(endAngle) * innerR;
+
+  const startInnerX = Math.cos(startAngle) * innerR;
+  const startInnerY = Math.sin(startAngle) * innerR;
+
+  shape.lineTo(endInnerX, endInnerY);
+
+  // 안쪽 호
+  shape.absarc(0, 0, innerR, endAngle, startAngle, true);
+
+  // 시작점 닫기
+  shape.lineTo(Math.cos(startAngle) * outerR, Math.sin(startAngle) * outerR);
+  shape.closePath();
+
+  return shape;
+}
+
+ createArrowArcMesh(color, radius) {
+  const shape = this.createArrowArcShape(radius);
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: this.depth,
+    bevelEnabled: true,
+    bevelSegments: 3,
+    steps: 1,
+    bevelSize: this.depth * 0.18,
+    bevelThickness: this.depth * 0.22,
+    curveSegments: 96,
+  });
+
+  geometry.center();
+
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    metalness: 0.42,
+    roughness: 0.24,
+    transparent: true,
+    opacity: 0.96,
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  return mesh;
+}
+
+  orientAxisGroup(group, axis) {
+    group.rotation.set(0, 0, 0);
+
+    if (axis === "x") {
+      group.rotation.y = Math.PI / 2;
+      group.rotation.z = Math.PI / 2;
+    } else if (axis === "y") {
+      group.rotation.x = -Math.PI / 2;
+    } else if (axis === "z") {
+      group.rotation.z = 0;
+    }
+  }
+
+  createAxisGizmo(axis, color, radius) {
+    const group = new THREE.Group();
+    group.userData.axis = axis;
+
+    const arrowArc = this.createArrowArcMesh(color, radius);
+    group.add(arrowArc);
+
+    this.orientAxisGroup(group, axis);
+    return group;
+  }
+
+  createGizmos() {
+    for (const axis of ["x", "y", "z"]) {
+      const gizmo = this.createAxisGizmo(axis, this.axisColors[axis], this.defaultRadius);
+      this.root.add(gizmo);
+      this.axisMeshes[axis] = gizmo;
+    }
+  }
+
+  disposeAxisGroup(group) {
+    if (!group) return;
+
+    group.traverse((child) => {
+      if (child.geometry) {
+        child.geometry.dispose();
+      }
+      if (child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach((m) => m.dispose());
+        } else {
+          child.material.dispose();
+        }
+      }
+    });
+  }
+
+  rebuildForRadius(radius) {
+    this.currentRadius = Math.max(this.blockSize * 0.9, radius);
+
+    for (const axis of ["x", "y", "z"]) {
+      const oldGroup = this.axisMeshes[axis];
+      const wasVisible = oldGroup?.visible ?? true;
+
+      if (oldGroup) {
+        this.root.remove(oldGroup);
+        this.disposeAxisGroup(oldGroup);
+      }
+
+      const newGroup = this.createAxisGizmo(
+        axis,
+        this.axisColors[axis],
+        this.currentRadius
+      );
+      newGroup.visible = wasVisible;
+      this.root.add(newGroup);
+      this.axisMeshes[axis] = newGroup;
+    }
+
+    if (this.activeAxis) {
+      this.setActiveAxis(this.activeAxis);
+    }
+  }
+
+  computeBlockVisualCenter(block) {
+    if (!block?.mesh) return null;
+
+    this.tmpBox.setFromObject(block.mesh);
+
+    if (this.tmpBox.isEmpty()) {
+      return block.mesh.position.clone();
+    }
+
+    this.tmpBox.getCenter(this.tmpCenter);
+    return this.tmpCenter.clone();
+  }
+
+  computeBlockVisualRadius(block) {
+    if (!block?.mesh) return this.defaultRadius;
+
+    this.tmpBox.setFromObject(block.mesh);
+    if (this.tmpBox.isEmpty()) {
+      return this.defaultRadius;
+    }
+
+    this.tmpBox.getSize(this.tmpSize);
+
+    const halfX = this.tmpSize.x * 0.5;
+    const halfY = this.tmpSize.y * 0.5;
+    const halfZ = this.tmpSize.z * 0.5;
+
+    const enclosingRadius = Math.max(
+      Math.hypot(halfY, halfZ),
+      Math.hypot(halfX, halfZ),
+      Math.hypot(halfX, halfY)
     );
 
-    const material = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.65,
-      depthTest: false,
-      depthWrite: false,
-    });
-
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.rotation.set(rotation.x, rotation.y, rotation.z);
-    mesh.userData.axis = axis;
-    mesh.renderOrder = 999;
-
-    this.root.add(mesh);
-    this.handles[axis] = mesh;
-    this.materials[axis] = material;
+    return Math.max(this.blockSize * 1.2, enclosingRadius + this.blockSize * 0.55);
   }
 
-  createAxisLine(axis, color, dir) {
-    const points = [
-      dir.clone().multiplyScalar(0.15),
-      dir.clone().multiplyScalar(this.ringRadius + 0.18),
-    ];
+  syncToBlock(block) {
+    if (!block?.mesh) return;
 
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.85,
-      depthTest: false,
-      depthWrite: false,
-    });
+    const visualCenter = this.computeBlockVisualCenter(block);
+    if (!visualCenter) return;
 
-    const line = new THREE.Line(geometry, material);
-    line.renderOrder = 999;
-    line.userData.axis = axis;
+    const desiredRadius = this.computeBlockVisualRadius(block);
+    if (Math.abs(desiredRadius - this.currentRadius) > 0.08) {
+      this.rebuildForRadius(desiredRadius);
+    }
 
-    this.root.add(line);
-    this.axisLines[axis] = line;
-  }
+    // 블럭 실제 중심점 기준
+    this.root.position.copy(visualCenter);
 
-  createHandles() {
-    this.createRing("x", 0xff4d4d, new THREE.Euler(0, Math.PI / 2, 0));
-    this.createRing("y", 0x55ff55, new THREE.Euler(Math.PI / 2, 0, 0));
-    this.createRing("z", 0x4d7dff, new THREE.Euler(0, 0, 0));
-
-    this.createAxisLine("x", 0xff4d4d, new THREE.Vector3(1, 0, 0));
-    this.createAxisLine("y", 0x55ff55, new THREE.Vector3(0, 1, 0));
-    this.createAxisLine("z", 0x4d7dff, new THREE.Vector3(0, 0, 1));
+    // 블럭 회전에 같이 따라감
+    this.root.quaternion.copy(block.mesh.quaternion);
   }
 
   show() {
@@ -88,77 +228,42 @@ export class GizmoController {
 
   hide() {
     this.root.visible = false;
-    this.unlockAxis();
-    this.setActiveAxis(null);
-  }
-
-  syncToBlock(block) {
-    if (!block?.mesh) return;
-    this.root.position.copy(block.mesh.position);
-    this.root.quaternion.copy(block.mesh.quaternion);
-  }
-
-  pickAxis(raycaster) {
-    const objects = Object.values(this.handles).filter((obj) => obj.visible !== false);
-    const hits = raycaster.intersectObjects(objects, false);
-    if (!hits.length) return null;
-
-    const hit = hits[0];
-    return {
-      axis: hit.object.userData.axis ?? null,
-      point: hit.point.clone(),
-      object: hit.object,
-      distance: hit.distance,
-    };
+    this.activeAxis = null;
   }
 
   setActiveAxis(axis) {
-    for (const key of Object.keys(this.materials)) {
-      const mat = this.materials[key];
+    this.activeAxis = axis;
+
+    for (const [key, mesh] of Object.entries(this.axisMeshes)) {
       const isActive = key === axis;
 
-      if (this.lockedAxis) {
-        mat.opacity = key === this.lockedAxis ? 1.0 : 0.0;
-      } else {
-        mat.opacity = isActive ? 1.0 : 0.65;
-      }
+      mesh.scale.setScalar(isActive ? 1.14 : 1.0);
+
+      mesh.traverse((child) => {
+        if (!child.material) return;
+
+        if (Array.isArray(child.material)) {
+          child.material.forEach((mat) => {
+            mat.opacity = isActive ? 1.0 : 0.22;
+            mat.transparent = true;
+          });
+        } else {
+          child.material.opacity = isActive ? 1.0 : 0.22;
+          child.material.transparent = true;
+        }
+      });
     }
   }
 
   lockToAxis(axis) {
-    this.lockedAxis = axis ?? null;
-
-    Object.keys(this.handles).forEach((key) => {
-      this.handles[key].visible = key === axis;
-    });
-
-    Object.keys(this.axisLines).forEach((key) => {
-      this.axisLines[key].visible = key === axis;
-    });
-
-    this.setActiveAxis(axis);
+    for (const [key, mesh] of Object.entries(this.axisMeshes)) {
+      mesh.visible = key === axis;
+    }
   }
 
   unlockAxis() {
-    this.lockedAxis = null;
-
-    Object.keys(this.handles).forEach((key) => {
-      this.handles[key].visible = true;
-    });
-
-    Object.keys(this.axisLines).forEach((key) => {
-      this.axisLines[key].visible = true;
-    });
-
-    this.setActiveAxis(null);
-  }
-
-  dispose() {
-    this.scene.remove(this.root);
-
-    this.root.traverse((obj) => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) obj.material.dispose();
-    });
+    for (const mesh of Object.values(this.axisMeshes)) {
+      mesh.visible = true;
+    }
   }
 }

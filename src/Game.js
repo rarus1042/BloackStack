@@ -4,6 +4,7 @@ import { Physics } from "./Physics.js";
 import { BlockSystem } from "./BlockSystem.js";
 import { SupabaseRankingService } from "./SupabaseRankingService.js";
 import { PlacementGuide } from "./PlacementGuide.js";
+import { GizmoController } from "./GizmoController.js";
 
 export class Game {
   constructor() {
@@ -15,7 +16,7 @@ export class Game {
       gridStep: 1,
       previewClampPadding: 0.55,
 
-     slowFallSpeed: 2.0,
+     slowFallSpeed: 1.25,
       fastFallSpeed: 4.0,
 
       spawnClearance: 10.4,
@@ -32,7 +33,10 @@ export class Game {
 
     this.renderer = new Renderer(this.config);
     this.physics = new Physics(this.config);
-
+    this.rotateGizmo = new GizmoController(this.renderer.scene, {
+      blockSize: this.config.blockSize ?? 1,
+    });
+    this.rotateGizmo.hide();
     this.blockSystem = null;
     this.placementGuide = new PlacementGuide(this.renderer.scene, {
       stageSize: this.config.stageSize,
@@ -76,7 +80,9 @@ export class Game {
 
     this.rotateButtonsPanel = null;
     this.rotateButtons = { x: null, y: null, z: null };
-
+    this.rotationModeActive = false;
+    this.selectedRotateAxis = null;
+    
     this.movePadPanel = null;
     this.moveButtons = { up: null, left: null, down: null, right: null };
 
@@ -569,6 +575,85 @@ updateStartOverlayLayout() {
   }
 }
 
+
+enterRotationMode(axis) {
+  if (!this.blockSystem) return false;
+  if (!this.isSessionStarted || this.isGameOver || this.isRestarting) return false;
+
+  const block = this.blockSystem.getCurrentPreviewBlock?.();
+  if (!block || this.blockSystem.state !== "EDIT") return false;
+
+  this.rotationModeActive = true;
+  this.selectedRotateAxis = axis;
+
+  if (this.rotateGizmo) {
+    this.rotateGizmo.syncToBlock(block);
+    this.rotateGizmo.show();
+    this.rotateGizmo.unlockAxis();
+    this.rotateGizmo.lockToAxis(axis);
+    this.rotateGizmo.setActiveAxis(axis);
+  }
+
+  this.updateRotateButtonsUI();
+  return true;
+}
+
+exitRotationMode() {
+  this.rotationModeActive = false;
+  this.selectedRotateAxis = null;
+
+  if (this.rotateGizmo) {
+    this.rotateGizmo.hide();
+  }
+
+  this.updateRotateButtonsUI();
+}
+
+applyRotationInput(axis) {
+  if (!axis || !this.blockSystem) return false;
+  if (!this.isSessionStarted || this.isGameOver || this.isRestarting) return false;
+
+  const block = this.blockSystem.getCurrentPreviewBlock?.();
+  if (!block || this.blockSystem.state !== "EDIT") return false;
+
+  if (!this.rotationModeActive || this.selectedRotateAxis !== axis) {
+    return this.enterRotationMode(axis);
+  }
+
+  const rotated = this.blockSystem.rotatePreview90(axis);
+  if (!rotated) return false;
+
+  if (this.rotateGizmo) {
+    const updatedBlock = this.blockSystem.getCurrentPreviewBlock?.();
+    if (updatedBlock) {
+      this.rotateGizmo.syncToBlock(updatedBlock);
+      this.rotateGizmo.lockToAxis(axis);
+      this.rotateGizmo.setActiveAxis(axis);
+    }
+  }
+
+  return true;
+}
+
+applyRotationConfirm() {
+  if (!this.rotationModeActive || !this.selectedRotateAxis) return false;
+  return this.applyRotationInput(this.selectedRotateAxis);
+}
+
+syncRotationGizmo() {
+  if (!this.rotationModeActive || !this.rotateGizmo || !this.blockSystem) return;
+
+  const block = this.blockSystem.getCurrentPreviewBlock?.();
+  if (!block || this.blockSystem.state !== "EDIT") {
+    this.exitRotationMode();
+    return;
+  }
+
+  this.rotateGizmo.syncToBlock(block);
+  this.rotateGizmo.lockToAxis(this.selectedRotateAxis);
+  this.rotateGizmo.setActiveAxis(this.selectedRotateAxis);
+}
+
   createNextPreviewUI() {
     let panel = document.getElementById("nextBlockPanel");
 
@@ -837,31 +922,59 @@ updateStartOverlayLayout() {
     this.updateMovePadUI();
   }
 
-  updateMovePadLayout() {
-    if (!this.movePadPanel) return;
+ updateMovePadLayout() {
+  if (!this.movePadPanel) return;
 
-    const metrics = this.getResponsiveUiMetrics();
-    const isCompact = metrics.isMobile;
-    const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
+  const metrics = this.getResponsiveUiMetrics();
+  const isCompact = metrics.isMobile;
+  const isLandscapeCompact = metrics.isMobile && metrics.isLandscape;
 
-    const size = isLandscapeCompact ? 120 : isCompact ? 148 : 174;
-    const cell = isLandscapeCompact ? 32 : isCompact ? 40 : 48;
+  const shortSide = Math.max(1, metrics.shortSide);
 
-    this.movePadPanel.style.left = isLandscapeCompact ? "66px" : isCompact ? "86px" : "98px";
-    this.movePadPanel.style.bottom = isLandscapeCompact ? "12px" : isCompact ? "18px" : "22px";
-    this.movePadPanel.style.width = `${size}px`;
-    this.movePadPanel.style.height = `${size}px`;
+  // 캔버스 비율 기준으로 크기 계산
+  const panelSize = isLandscapeCompact
+    ? THREE.MathUtils.clamp(shortSide * 0.20, 86, 112)
+    : isCompact
+    ? THREE.MathUtils.clamp(shortSide * 0.24, 96, 132)
+    : THREE.MathUtils.clamp(shortSide * 0.19, 132, 172);
 
-    for (const btn of Object.values(this.moveButtons)) {
-      if (!btn) continue;
-      btn.style.width = `${cell}px`;
-      btn.style.height = `${cell}px`;
-      btn.style.fontSize = isLandscapeCompact ? "14px" : isCompact ? "16px" : "18px";
-      btn.style.justifySelf = "center";
-      btn.style.alignSelf = "center";
-    }
+  const cellSize = isLandscapeCompact
+    ? THREE.MathUtils.clamp(panelSize * 0.28, 24, 32)
+    : isCompact
+    ? THREE.MathUtils.clamp(panelSize * 0.30, 28, 38)
+    : THREE.MathUtils.clamp(panelSize * 0.29, 36, 48);
+
+  const gap = isLandscapeCompact ? 4 : isCompact ? 5 : 6;
+  const padding = isLandscapeCompact ? 5 : isCompact ? 6 : 8;
+  const radius = isLandscapeCompact ? 12 : isCompact ? 14 : 16;
+
+  // 우측 하단 배치
+  const right = isLandscapeCompact ? 12 : isCompact ? 14 : 18;
+  const bottom = isLandscapeCompact ? 64 : isCompact ? 74 : 22;
+
+  this.movePadPanel.style.left = "auto";
+  this.movePadPanel.style.right = `${right}px`;
+  this.movePadPanel.style.bottom = `${bottom}px`;
+  this.movePadPanel.style.width = `${Math.round(panelSize)}px`;
+  this.movePadPanel.style.height = `${Math.round(panelSize)}px`;
+  this.movePadPanel.style.gap = `${gap}px`;
+  this.movePadPanel.style.padding = `${padding}px`;
+  this.movePadPanel.style.borderRadius = `${radius}px`;
+
+  for (const btn of Object.values(this.moveButtons)) {
+    if (!btn) continue;
+    btn.style.width = `${Math.round(cellSize)}px`;
+    btn.style.height = `${Math.round(cellSize)}px`;
+    btn.style.fontSize = isLandscapeCompact
+      ? `${Math.round(cellSize * 0.42)}px`
+      : isCompact
+      ? `${Math.round(cellSize * 0.44)}px`
+      : `${Math.round(cellSize * 0.40)}px`;
+    btn.style.borderRadius = `${Math.max(10, Math.round(cellSize * 0.28))}px`;
+    btn.style.justifySelf = "center";
+    btn.style.alignSelf = "center";
   }
-
+}
   createSettingsButton() {
     let button = document.getElementById("settingsButton");
 
@@ -1397,25 +1510,43 @@ updateStartOverlayLayout() {
 }
 
   updateRotateButtonsUI() {
-    const canRotate =
-      !!this.blockSystem &&
-      !!this.blockSystem.getCurrentPreviewBlock() &&
-      this.blockSystem.state === "EDIT" &&
-      !this.isGameOver &&
-      !this.isRestarting &&
-      this.isSessionStarted;
+  const canRotate =
+    !!this.blockSystem &&
+    !!this.blockSystem.getCurrentPreviewBlock() &&
+    this.blockSystem.state === "EDIT" &&
+    !this.isGameOver &&
+    !this.isRestarting &&
+    this.isSessionStarted;
 
-    if (this.rotateButtonsPanel) {
-      this.rotateButtonsPanel.style.opacity = canRotate ? "1" : "0.55";
-    }
-
-    for (const button of Object.values(this.rotateButtons)) {
-      if (!button) continue;
-      button.disabled = !canRotate;
-      button.style.cursor = canRotate ? "pointer" : "default";
-      button.style.opacity = canRotate ? "1" : "0.5";
-    }
+  if (!canRotate && this.rotationModeActive) {
+    this.exitRotationMode();
+    return;
   }
+
+  if (this.rotateButtonsPanel) {
+    this.rotateButtonsPanel.style.opacity = canRotate ? "1" : "0.55";
+  }
+
+  for (const [axis, button] of Object.entries(this.rotateButtons)) {
+    if (!button) continue;
+
+    const isSelected =
+      canRotate &&
+      this.rotationModeActive &&
+      this.selectedRotateAxis === axis;
+
+    button.disabled = !canRotate;
+    button.style.cursor = canRotate ? "pointer" : "default";
+    button.style.opacity = canRotate ? "1" : "0.5";
+    button.style.background = isSelected
+      ? "rgba(255,255,255,0.24)"
+      : "rgba(255,255,255,0.14)";
+    button.style.boxShadow = isSelected
+      ? `0 0 0 1px ${this.axisColorMap[axis]} inset`
+      : "none";
+    button.style.transform = isSelected ? "translateY(-1px)" : "translateY(0)";
+  }
+}
 
   updateMovePadUI() {
     const canMove =
@@ -1468,12 +1599,13 @@ startActionHold() {
   if (!this.blockSystem.getCurrentPreviewBlock()) return;
   if (this.blockSystem.state !== "EDIT") return;
 
-  this.isActionHolding = true;
+  if (this.rotationModeActive) {
+    this.exitRotationMode();
+  }
 
-  // ✔ 가속만 적용 (즉시 착지 없음)
+  this.isActionHolding = true;
   this.blockSystem.beginFastDropHold();
 
-  // ❌ 기존 2초 타이머 제거됨
   if (this.actionHoldTimeoutId) {
     clearTimeout(this.actionHoldTimeoutId);
     this.actionHoldTimeoutId = null;
@@ -1518,17 +1650,15 @@ onActionButtonPointerCancel(event) {
   this.endActionHold();
 }
 
-  onRotateStepButtonClick(event) {
-    event.preventDefault();
-    event.stopPropagation();
+onRotateStepButtonClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
 
-    const axis = event.currentTarget?.dataset?.axis;
-    if (!axis || !this.blockSystem) return;
-    if (!this.isSessionStarted || this.isGameOver || this.isRestarting) return;
+  const axis = event.currentTarget?.dataset?.axis;
+  if (!axis) return;
 
-    const rotated = this.blockSystem.rotatePreview90(axis);
-    if (!rotated) return;
-  }
+  this.applyRotationInput(axis);
+}
 
   getCameraPlanarDirections() {
     const forward = new THREE.Vector3();
@@ -1563,35 +1693,39 @@ onActionButtonPointerCancel(event) {
     };
   }
 
-  movePreviewByDirection(dir) {
-    if (!this.blockSystem || !this.isSessionStarted) return false;
-    if (this.isGameOver || this.isRestarting) return false;
-    if (!this.blockSystem.getCurrentPreviewBlock()) return false;
-    if (this.blockSystem.state !== "EDIT") return false;
+ movePreviewByDirection(dir) {
+  if (!this.blockSystem || !this.isSessionStarted) return false;
+  if (this.isGameOver || this.isRestarting) return false;
+  if (!this.blockSystem.getCurrentPreviewBlock()) return false;
+  if (this.blockSystem.state !== "EDIT") return false;
 
-    const { forward, right } = this.getCameraPlanarDirections();
-
-    let dx = 0;
-    let dz = 0;
-
-    if (dir === "up") {
-      dx = forward.x;
-      dz = forward.z;
-    } else if (dir === "down") {
-      dx = -forward.x;
-      dz = -forward.z;
-    } else if (dir === "left") {
-      dx = -right.x;
-      dz = -right.z;
-    } else if (dir === "right") {
-      dx = right.x;
-      dz = right.z;
-    } else {
-      return false;
-    }
-
-    return this.blockSystem.movePreviewByGrid(dx, dz);
+  if (this.rotationModeActive) {
+    this.exitRotationMode();
   }
+
+  const { forward, right } = this.getCameraPlanarDirections();
+
+  let dx = 0;
+  let dz = 0;
+
+  if (dir === "up") {
+    dx = forward.x;
+    dz = forward.z;
+  } else if (dir === "down") {
+    dx = -forward.x;
+    dz = -forward.z;
+  } else if (dir === "left") {
+    dx = -right.x;
+    dz = -right.z;
+  } else if (dir === "right") {
+    dx = right.x;
+    dz = right.z;
+  } else {
+    return false;
+  }
+
+  return this.blockSystem.movePreviewByGrid(dx, dz);
+}
 
   onMoveButtonClick(event) {
     event.preventDefault();
@@ -1608,7 +1742,7 @@ onActionButtonPointerCancel(event) {
   const key = event.key.toLowerCase();
 
   if (!this.isSessionStarted) {
-    if ((key === "enter" || key === " ") && this.isStartOverlayReady) {
+    if (key === "enter" || key === " ") {
       event.preventDefault();
       this.onStartButtonClick();
     }
@@ -1619,19 +1753,25 @@ onActionButtonPointerCancel(event) {
 
   if (key === "q") {
     event.preventDefault();
-    this.blockSystem.rotatePreview90("x");
+    this.applyRotationInput("x");
     return;
   }
 
   if (key === "w") {
     event.preventDefault();
-    this.blockSystem.rotatePreview90("y");
+    this.applyRotationInput("y");
     return;
   }
 
   if (key === "e") {
     event.preventDefault();
-    this.blockSystem.rotatePreview90("z");
+    this.applyRotationInput("z");
+    return;
+  }
+
+  if (key === "r") {
+    event.preventDefault();
+    this.applyRotationConfirm();
     return;
   }
 
@@ -1752,6 +1892,7 @@ async onStartButtonClick() {
     this.isRestarting = true;
     this.endActionHold();
     this.blockSystem.reset();
+        this.exitRotationMode();
         this.placementGuide?.hide();
     this.blockSystem.setGameStarted(false);
 
@@ -1978,6 +2119,7 @@ async onStartButtonClick() {
       this.blockSystem.update(dt);
 
       this.triggerLandingEffects();
+            this.syncRotationGizmo();
       this.updatePlacementGhost();
 
       const followHeight = this.blockSystem.getMaxHeight();
