@@ -420,50 +420,70 @@ resetCamera() {
   this.controls.update();
 }
 
-     updateFailureCamera(bounds, dt = 0.016) {
-    if (!bounds) return;
+   updateFailureCamera(bounds, dt = 0.016) {
+  if (!bounds) return;
 
-    const min = bounds.min;
-    const max = bounds.max;
-    const center = bounds.center;
+  const min = bounds.min;
+  const max = bounds.max;
+  const center = bounds.center;
 
-    const sizeX = Math.max(1, max.x - min.x);
-    const sizeY = Math.max(1, max.y - min.y);
-    const sizeZ = Math.max(1, max.z - min.z);
+  const sizeX = Math.max(1, max.x - min.x);
+  const sizeY = Math.max(1, max.y - min.y);
+  const sizeZ = Math.max(1, max.z - min.z);
 
-    const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
-    const aspect = this.camera.aspect || 1;
+  const fovRad = THREE.MathUtils.degToRad(this.camera.fov);
+  const aspect = Math.max(0.35, this.camera.aspect || 1);
 
-    const fitHeightDistance = (sizeY * 0.5) / Math.tan(fovRad * 0.5);
-    const fitWidthDistance =
-      ((sizeX * 0.5) / Math.tan(fovRad * 0.5)) / Math.max(0.35, aspect);
+  const fitHeightDistance = (sizeY * 0.5) / Math.tan(fovRad * 0.5);
+  const fitWidthDistance =
+    ((sizeX * 0.5) / Math.tan(fovRad * 0.5)) / aspect;
 
-    const desiredDistance = Math.max(
-      10,
-      fitHeightDistance,
-      fitWidthDistance,
-      sizeZ * 0.8
-    ) + 3.0;
+  const footprint = Math.max(sizeX, sizeZ);
+  const diagonal = Math.sqrt(sizeX * sizeX + sizeY * sizeY + sizeZ * sizeZ);
 
-    const desiredTarget = new THREE.Vector3(
-      center.x,
-      min.y + sizeY * 0.5,
-      center.z
-    );
+  // 기존 fit 거리
+  const baseDistance = Math.max(
+    10,
+    fitHeightDistance,
+    fitWidthDistance,
+    sizeZ * 0.9,
+    footprint * 0.8,
+    diagonal * 0.55
+  );
 
-    // Z축 정면에서 바라보게 고정
-    // 정면 방향을 -Z 쪽에서 +Z 방향으로 본다고 가정
-    const desiredCamera = new THREE.Vector3(
-      center.x,
-      min.y + sizeY * 0.55 + 1.2,
-      center.z + desiredDistance
-    );
+  // 높이가 높을수록 더 멀리서 보게 추가 후퇴
+  const heightBackoff = sizeY * 0.85;
 
-    const t = 1 - Math.pow(1 - (this.cameraFailLerp ?? 0.14), Math.max(1, dt * 60));
+  // 바닥 넓이도 조금 반영해서 좌우 여유 확보
+  const footprintBackoff = footprint * 0.35;
 
-    this.controls.target.lerp(desiredTarget, t);
-    this.camera.position.lerp(desiredCamera, t);
-  }
+  const desiredDistance = baseDistance + heightBackoff + footprintBackoff + 4.0;
+
+  const desiredTarget = new THREE.Vector3(
+    center.x,
+    min.y + sizeY * 0.52,
+    center.z
+  );
+
+  // 높이가 커질수록 카메라도 같이 올라가게
+  const desiredCameraY =
+    min.y +
+    sizeY * 0.68 +
+    Math.max(1.6, sizeY * 0.22);
+
+  const desiredCamera = new THREE.Vector3(
+    center.x,
+    desiredCameraY,
+    center.z + desiredDistance
+  );
+
+  const t =
+    1 - Math.pow(1 - (this.cameraFailLerp ?? 0.14), Math.max(1, dt * 60));
+
+  this.controls.target.lerp(desiredTarget, t);
+  this.camera.position.lerp(desiredCamera, t);
+}
+
   spawnLandingEffect(position, options = {}) {
     const radius = options.radius ?? 0.48;
     const color = options.color ?? 0xffd07a;
