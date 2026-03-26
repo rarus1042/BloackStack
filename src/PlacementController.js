@@ -176,50 +176,58 @@ export class PlacementController {
     return this.blockSystem?.getCurrentPreviewBlock() ?? null;
   }
 
-  updateProjectionRay(block) {
-    if (!block?.mesh || !this.blockSystem?.getPlacementPrediction) {
-      this.guide.hideProjection();
-      this.guide.hidePredictionGhost();
-      return;
-    }
+ updateProjectionRay(block) {
+  if (!block?.mesh || !this.blockSystem?.getPlacementPrediction) {
+    this.guide.hideProjection();
+    this.guide.hidePredictionGhost();
+    return;
+  }
 
-    const prediction = this.blockSystem.getPlacementPrediction();
+  const prediction = this.blockSystem.getPlacementPrediction();
 
-    if (!prediction?.position || !prediction?.quaternion) {
-      this.guide.hideProjection();
-      this.guide.hidePredictionGhost();
-      return;
-    }
+  if (!prediction?.position || !prediction?.quaternion) {
+    this.guide.hideProjection();
+    this.guide.hidePredictionGhost();
+    return;
+  }
 
-    const currentBottomY = prediction.currentBottomY ?? block.mesh.position.y;
-    const predictedBottomY = prediction.predictedBottomY ?? prediction.position.y;
+  const currentBottomY = prediction.currentBottomY ?? block.mesh.position.y;
+  const predictedBottomY = prediction.predictedBottomY ?? prediction.position.y;
 
-    this.projectionStart.set(
-      block.mesh.position.x,
-      currentBottomY + 0.01,
-      block.mesh.position.z
-    );
+  this.projectionStart.set(
+    block.mesh.position.x,
+    currentBottomY + 0.01,
+    block.mesh.position.z
+  );
 
+  if (prediction.contactPoint) {
+    this.projectionEnd.copy(prediction.contactPoint);
+  } else {
     this.projectionEnd.set(
       prediction.position.x,
       predictedBottomY + 0.008,
       prediction.position.z
     );
+  }
 
-    if (this.projectionEnd.y >= this.projectionStart.y - 0.002) {
-      this.guide.hideProjection();
-    } else {
-      this.guide.updateProjection(this.projectionStart, this.projectionEnd);
-    }
-
-    this.predictedBlockPosition.copy(prediction.position);
-
-    this.guide.updatePredictionGhost(
-      block,
-      this.predictedBlockPosition,
-      prediction.quaternion
+  if (this.projectionEnd.y >= this.projectionStart.y - 0.002) {
+    this.guide.hideProjection();
+  } else {
+    this.guide.updateProjection(
+      this.projectionStart,
+      this.projectionEnd,
+      prediction.contactNormal ?? null
     );
   }
+
+  this.predictedBlockPosition.copy(prediction.position);
+
+  this.guide.updatePredictionGhost(
+    block,
+    this.predictedBlockPosition,
+    prediction.quaternion
+  );
+}
 
   consumeEvent(event) {
     event.preventDefault();

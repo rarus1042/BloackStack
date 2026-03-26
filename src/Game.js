@@ -9,7 +9,7 @@ import { GizmoController } from "./GizmoController.js";
 export class Game {
   constructor() {
     this.config = {
-      stageSize: 7,
+      stageSize: 10,
       groundHeight: 0.01,
       stageThickness: 0.16,
       blockSize: 1,

@@ -639,15 +639,19 @@ export class BlockSystem {
     const coarseStep = Math.max(0.04, shapeData.halfExtent * 0.4);
     const searchMinY = Math.min(this.failY - 1.0, groundTopY - 3.0);
 
-    if (this.collidesShapeAt(startPosition, quaternion, shapeData, block)) {
-      const currentExtents = this.getShapeVerticalExtents(startPosition, quaternion, shapeData);
-      return {
-        position: startPosition.clone(),
-        quaternion: quaternion.clone(),
-        currentBottomY: currentExtents.minY,
-        predictedBottomY: currentExtents.minY,
-      };
-    }
+if (this.collidesShapeAt(startPosition, quaternion, shapeData, block)) {
+  const currentExtents = this.getShapeVerticalExtents(startPosition, quaternion, shapeData);
+  const contact = this.computePredictionContact(block, startPosition, quaternion);
+
+  return {
+    position: startPosition.clone(),
+    quaternion: quaternion.clone(),
+    currentBottomY: currentExtents.minY,
+    predictedBottomY: currentExtents.minY,
+    contactPoint: contact.contactPoint,
+    contactNormal: contact.contactNormal,
+  };
+}
 
     const currentExtents = this.getShapeVerticalExtents(startPosition, quaternion, shapeData);
 
@@ -686,13 +690,112 @@ export class BlockSystem {
     const finalPosition = new THREE.Vector3(startPosition.x, high, startPosition.z);
     const finalExtents = this.getShapeVerticalExtents(finalPosition, quaternion, shapeData);
 
+const contact = this.computePredictionContact(block, finalPosition, quaternion);
+
+return {
+  position: finalPosition,
+  quaternion: quaternion.clone(),
+  currentBottomY: currentExtents.minY,
+  predictedBottomY: finalExtents.minY,
+  contactPoint: contact.contactPoint,
+  contactNormal: contact.contactNormal,
+};
+  }
+
+  computePredictionContact(block, position, quaternion) {
+  const shapeData = block?.collision;
+  if (!shapeData?.cellOffsets?.length) {
     return {
-      position: finalPosition,
-      quaternion: quaternion.clone(),
-      currentBottomY: currentExtents.minY,
-      predictedBottomY: finalExtents.minY,
+      contactPoint: new THREE.Vector3(position.x, 0, position.z),
+      contactNormal: new THREE.Vector3(0, 1, 0),
     };
   }
+
+  const halfA = shapeData.colliderHalfExtent ?? shapeData.halfExtent ?? 0.5;
+  const cellsA = this.getWorldCellCenters(position, quaternion, shapeData);
+
+  let bestGap = Infinity;
+  let bestPoint = null;
+  let bestNormal = null;
+
+  // 1) ground 우선 검사
+  for (const cellA of cellsA) {
+    const gapToGround = cellA.y - halfA;
+
+    if (gapToGround < bestGap) {
+      bestGap = gapToGround;
+      bestPoint = new THREE.Vector3(cellA.x, 0.012, cellA.z);
+      bestNormal = new THREE.Vector3(0, 1, 0);
+    }
+  }
+
+  // 2) 기존 블럭 상면/경사면 근사 검사
+  for (const other of this.blocks) {
+    if (!other || other === block) continue;
+    if (other.state === "preview") continue;
+    if (!other.collision?.cellOffsets?.length) continue;
+
+    const otherPosRaw = other.body.translation();
+    const otherRotRaw = other.body.rotation();
+
+    const otherPos = new THREE.Vector3(otherPosRaw.x, otherPosRaw.y, otherPosRaw.z);
+    const otherQuat = new THREE.Quaternion(
+      otherRotRaw.x,
+      otherRotRaw.y,
+      otherRotRaw.z,
+      otherRotRaw.w
+    );
+
+    const axesB = this.getQuaternionAxes(otherQuat);
+    const cellsB = this.getWorldCellCenters(otherPos, otherQuat, other.collision);
+    const halfB = other.collision.colliderHalfExtent ?? other.collision.halfExtent ?? 0.5;
+
+    // local Y축을 접촉면 normal 후보로 사용
+    const supportNormal = axesB[1].clone().normalize();
+    if (supportNormal.y < 0) {
+      supportNormal.multiplyScalar(-1);
+    }
+
+    const lateralLimit = (halfA + halfB) * 0.9 + 0.08;
+
+    for (const cellA of cellsA) {
+      for (const cellB of cellsB) {
+        const diff = this.tmpVecA.copy(cellA).sub(cellB);
+
+        const verticalSep = diff.dot(supportNormal);
+
+        const lateral = this.tmpVecB
+          .copy(diff)
+          .addScaledVector(supportNormal, -verticalSep);
+
+        const lateralDist = lateral.length();
+        const gap = verticalSep - (halfA + halfB);
+
+        // 가까운 접촉면 후보만 채택
+        if (lateralDist > lateralLimit) continue;
+        if (gap < -0.08) continue;
+
+        if (gap < bestGap) {
+          bestGap = gap;
+          bestNormal = supportNormal.clone();
+          bestPoint = cellB.clone().addScaledVector(supportNormal, halfB + 0.012);
+        }
+      }
+    }
+  }
+
+  if (!bestPoint || !bestNormal) {
+    return {
+      contactPoint: new THREE.Vector3(position.x, 0.012, position.z),
+      contactNormal: new THREE.Vector3(0, 1, 0),
+    };
+  }
+
+  return {
+    contactPoint: bestPoint,
+    contactNormal: bestNormal,
+  };
+}
 
   canPlacePreviewAt(position, quaternion) {
     const block = this.getCurrentPreviewBlock();

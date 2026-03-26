@@ -221,7 +221,7 @@ export class BlockFactory {
 
   // 기존 0.94보다 조금 더 줄여서
   // 보이는 블럭보다 살짝 작게 충돌하게 만듦
-  const colliderHalfExtent = halfExtent * 0.90;
+  const colliderHalfExtent = halfExtent * 0.94;
 
   const rawCellOffsets = entry.cells.map(([x, y, z]) => ({
     x: x * this.cellSize,

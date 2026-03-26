@@ -22,53 +22,7 @@ export class PlacementGuide {
     this.predictionGhostOutline = null;
     this.predictionGhostSourceId = null;
 
-    this.createGuide();
     this.createProjectionRay();
-  }
-
-  createGuide() {
-    const segments = 96;
-    const points = [];
-
-    for (let i = 0; i <= segments; i++) {
-      const t = (i / segments) * Math.PI * 2;
-      points.push(
-        new THREE.Vector3(
-          Math.cos(t) * this.radius,
-          0,
-          Math.sin(t) * this.radius
-        )
-      );
-    }
-
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({
-      color: 0xffff66,
-      transparent: true,
-      opacity: 0.82,
-      depthTest: false,
-      depthWrite: false,
-    });
-
-    this.border = new THREE.Line(geometry, material);
-    this.border.renderOrder = 997;
-    this.root.add(this.border);
-
-    const fillGeom = new THREE.CircleGeometry(this.radius, 96);
-    const fillMat = new THREE.MeshBasicMaterial({
-      color: 0xffff66,
-      transparent: true,
-      opacity: 0.08,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-    });
-
-    this.fill = new THREE.Mesh(fillGeom, fillMat);
-    this.fill.rotation.x = -Math.PI / 2;
-    this.fill.renderOrder = 996;
-    this.root.add(this.fill);
-
     this.setHeight(0);
   }
 
@@ -102,36 +56,6 @@ export class PlacementGuide {
     this.projectionLine = new THREE.Line(lineGeom, lineMat);
     this.projectionLine.renderOrder = 996;
     this.projectionRoot.add(this.projectionLine);
-
-    const ringGeom = new THREE.RingGeometry(0.14, 0.22, 36);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xffc06b,
-      transparent: true,
-      opacity: 0.68,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-    });
-
-    this.hitRing = new THREE.Mesh(ringGeom, ringMat);
-    this.hitRing.rotation.x = -Math.PI / 2;
-    this.hitRing.renderOrder = 996;
-    this.projectionRoot.add(this.hitRing);
-
-    const glowGeom = new THREE.CircleGeometry(0.28, 36);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: 0xff8c2f,
-      transparent: true,
-      opacity: 0.2,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-    });
-
-    this.hitGlow = new THREE.Mesh(glowGeom, glowMat);
-    this.hitGlow.rotation.x = -Math.PI / 2;
-    this.hitGlow.renderOrder = 994;
-    this.projectionRoot.add(this.hitGlow);
   }
 
   setHeight(y) {
@@ -165,40 +89,37 @@ export class PlacementGuide {
 
     this.projectionLine.position.set(midX, midY, midZ);
     this.projectionLine.scale.set(1, distance, 1);
-
-    this.hitRing.position.set(to.x, to.y + 0.012, to.z);
-    this.hitGlow.position.set(to.x, to.y + 0.01, to.z);
   }
 
-createPredictionGhost(block) {
-  if (!block?.mesh) return null;
+  createPredictionGhost(block) {
+    if (!block?.mesh) return null;
 
-  const ghost = block.mesh.clone(true);
+    const ghost = block.mesh.clone(true);
 
-  ghost.traverse((child) => {
-    if (!child.isMesh) return;
+    ghost.traverse((child) => {
+      if (!child.isMesh) return;
 
-    child.renderOrder = 993;
-    child.raycast = () => {};
+      child.renderOrder = 993;
+      child.raycast = () => {};
 
-    if (child.material) {
-      const mat = child.material.clone();
-      mat.transparent = true;
-      mat.opacity = 0.42;
-      mat.depthWrite = false;
+      if (child.material) {
+        const mat = child.material.clone();
+        mat.transparent = true;
+        mat.opacity = 0.42;
+        mat.depthWrite = false;
 
-      if ("emissive" in mat && mat.emissive instanceof THREE.Color) {
-        mat.emissive = mat.emissive.clone();
-        mat.emissive.set(0xffffff);
-        mat.emissiveIntensity = 0.48;
+        if ("emissive" in mat && mat.emissive instanceof THREE.Color) {
+          mat.emissive = mat.emissive.clone();
+          mat.emissive.set(0xffffff);
+          mat.emissiveIntensity = 0.48;
+        }
+
+        child.material = mat;
       }
+    });
 
-      child.material = mat;
-    }
-  });
-
-  return ghost;
-}
+    return ghost;
+  }
 
   createPredictionOutline(block) {
     if (!block?.mesh) return null;
@@ -231,10 +152,7 @@ createPredictionGhost(block) {
       return;
     }
 
-    if (
-      this.predictionGhost &&
-      this.predictionGhostSourceId === sourceId
-    ) {
+    if (this.predictionGhost && this.predictionGhostSourceId === sourceId) {
       return;
     }
 
