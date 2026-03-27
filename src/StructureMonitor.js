@@ -37,11 +37,11 @@ export class StructureMonitor {
     this.failOutsideFramesRequired = options.failOutsideFramesRequired ?? 18;
     this.failCollapseFramesRequired = options.failCollapseFramesRequired ?? 10;
 
-    // 첫 접촉 / landing 안정화
     this.firstContactLinearDamping = options.firstContactLinearDamping ?? 0.2;
     this.firstContactAngularDamping = options.firstContactAngularDamping ?? 0.24;
     this.firstContactMaxDownSpeed = options.firstContactMaxDownSpeed ?? 0.11;
-    this.firstContactMaxHorizontalSpeed = options.firstContactMaxHorizontalSpeed ?? 0.05;
+    this.firstContactMaxHorizontalSpeed =
+      options.firstContactMaxHorizontalSpeed ?? 0.05;
 
     this.landingLinearDamping = options.landingLinearDamping ?? 0.7;
     this.landingAngularDamping = options.landingAngularDamping ?? 0.64;
@@ -50,22 +50,23 @@ export class StructureMonitor {
     this.landingMaxAngularSpeed = options.landingMaxAngularSpeed ?? 0.14;
 
     this.landingResetGraceFrames = options.landingResetGraceFrames ?? 12;
-    this.landingResetLinearMultiplier = options.landingResetLinearMultiplier ?? 2.2;
-    this.landingResetAngularMultiplier = options.landingResetAngularMultiplier ?? 2.0;
+    this.landingResetLinearMultiplier =
+      options.landingResetLinearMultiplier ?? 2.2;
+    this.landingResetAngularMultiplier =
+      options.landingResetAngularMultiplier ?? 2.0;
 
-    // settled 재낙하 방지
     this.settledWakeImmunityMs = options.settledWakeImmunityMs ?? 1500;
     this.settledWakeFramesRequired = options.settledWakeFramesRequired ?? 12;
-    this.settledMicroLinearThreshold = options.settledMicroLinearThreshold ?? 0.14;
-    this.settledMicroAngularThreshold = options.settledMicroAngularThreshold ?? 0.16;
+    this.settledMicroLinearThreshold =
+      options.settledMicroLinearThreshold ?? 0.14;
+    this.settledMicroAngularThreshold =
+      options.settledMicroAngularThreshold ?? 0.16;
 
-    // 고층일수록 wake 기준 완화
     this.highTowerStartHeight = options.highTowerStartHeight ?? 80;
     this.highTowerFullHeight = options.highTowerFullHeight ?? 220;
     this.highTowerWakeLinearBoost = options.highTowerWakeLinearBoost ?? 1.35;
     this.highTowerWakeAngularBoost = options.highTowerWakeAngularBoost ?? 1.2;
 
-    // wake 후 바로 재연쇄 붕괴 막기
     this.rewakeProtectionMs = options.rewakeProtectionMs ?? 900;
   }
 
@@ -107,7 +108,10 @@ export class StructureMonitor {
       return { linear: 1, angular: 1 };
     }
 
-    const denom = Math.max(1, this.highTowerFullHeight - this.highTowerStartHeight);
+    const denom = Math.max(
+      1,
+      this.highTowerFullHeight - this.highTowerStartHeight
+    );
     const t = Math.min(
       1,
       Math.max(0, (settledHeight - this.highTowerStartHeight) / denom)
@@ -119,44 +123,52 @@ export class StructureMonitor {
     };
   }
 
- forceSettle(block) {
-  block.state = "settled";
-  block.contactFrames = 0;
-  block.landingFrames = 0;
-  block.stableFrames = 0;
-  block.landingStartY = null;
-  block.landingStartTime = null;
-  block.jitterFrames = 0;
-  block.prevPosForJitter = null;
-  block.failOutsideFrames = 0;
-  block.failCollapseFrames = 0;
+  forceSettle(block) {
+    this.ensureBlockRuntimeFields(block);
 
-  const lv = block.body.linvel();
-  const av = block.body.angvel();
+    block.state = "settled";
+    block.contactFrames = 0;
+    block.landingFrames = 0;
+    block.stableFrames = 0;
+    block.landingStartY = null;
+    block.landingStartTime = null;
+    block.jitterFrames = 0;
+    block.prevPosForJitter = null;
+    block.failOutsideFrames = 0;
+    block.failCollapseFrames = 0;
+    block.wakeFrames = 0;
 
-  // 완전 정지시키지 말고, 수직 낙하만 거의 멈추고
-  // 회전은 약간 남겨서 무게중심에 따라 더 기울어질 수 있게 함
-  block.body.setLinvel(
-    {
-      x: lv.x * 0.35,
-      y: Math.max(-0.01, Math.min(0.01, lv.y * 0.1)),
-      z: lv.z * 0.35,
-    },
-    true
-  );
+    const now = performance.now();
+    block.settledAt = now;
+    block.lastWakeAt = now;
+    block.justSettledAt = now;
 
-  block.body.setAngvel(
-    {
-      x: av.x * 0.55,
-      y: av.y * 0.55,
-      z: av.z * 0.55,
-    },
-    true
-  );
+    const lv = block.body.linvel();
+    const av = block.body.angvel();
 
-  // 여기서는 sleep 금지
-  block.justSettledAt = performance.now();
-}
+    block.body.setLinvel(
+      {
+        x: lv.x * 0.2,
+        y: 0,
+        z: lv.z * 0.2,
+      },
+      true
+    );
+
+    block.body.setAngvel(
+      {
+        x: av.x * 0.35,
+        y: av.y * 0.35,
+        z: av.z * 0.35,
+      },
+      true
+    );
+
+    if (typeof block.body.sleep === "function") {
+      block.body.sleep();
+    }
+  }
+
   resetToFalling(block) {
     this.ensureBlockRuntimeFields(block);
 
@@ -224,7 +236,8 @@ export class StructureMonitor {
       : this.landingLockDelay;
 
     const wakeLinearThreshold = this.largeMoveLinearThreshold * wakeScale.linear;
-    const wakeAngularThreshold = this.largeMoveAngularThreshold * wakeScale.angular;
+    const wakeAngularThreshold =
+      this.largeMoveAngularThreshold * wakeScale.angular;
 
     for (const block of blocks) {
       if (
@@ -280,7 +293,10 @@ export class StructureMonitor {
           block.body.setLinvel(
             {
               x: dampedHorizontal.x,
-              y: this.clampAbs(lv.y * linearDamping, this.firstContactMaxDownSpeed),
+              y: this.clampAbs(
+                lv.y * linearDamping,
+                this.firstContactMaxDownSpeed
+              ),
               z: dampedHorizontal.z,
             },
             true
@@ -288,9 +304,18 @@ export class StructureMonitor {
 
           block.body.setAngvel(
             {
-              x: this.clampAbs(av.x * angularDamping, this.landingMaxAngularSpeed),
-              y: this.clampAbs(av.y * angularDamping, this.landingMaxAngularSpeed),
-              z: this.clampAbs(av.z * angularDamping, this.landingMaxAngularSpeed),
+              x: this.clampAbs(
+                av.x * angularDamping,
+                this.landingMaxAngularSpeed
+              ),
+              y: this.clampAbs(
+                av.y * angularDamping,
+                this.landingMaxAngularSpeed
+              ),
+              z: this.clampAbs(
+                av.z * angularDamping,
+                this.landingMaxAngularSpeed
+              ),
             },
             true
           );
@@ -319,7 +344,10 @@ export class StructureMonitor {
         block.body.setLinvel(
           {
             x: dampedHorizontal.x,
-            y: this.clampAbs(lv.y * linearDampingFactor, this.landingMaxDownSpeed),
+            y: this.clampAbs(
+              lv.y * linearDampingFactor,
+              this.landingMaxDownSpeed
+            ),
             z: dampedHorizontal.z,
           },
           true
@@ -327,9 +355,18 @@ export class StructureMonitor {
 
         block.body.setAngvel(
           {
-            x: this.clampAbs(av.x * angularDampingFactor, this.landingMaxAngularSpeed),
-            y: this.clampAbs(av.y * angularDampingFactor, this.landingMaxAngularSpeed),
-            z: this.clampAbs(av.z * angularDampingFactor, this.landingMaxAngularSpeed),
+            x: this.clampAbs(
+              av.x * angularDampingFactor,
+              this.landingMaxAngularSpeed
+            ),
+            y: this.clampAbs(
+              av.y * angularDampingFactor,
+              this.landingMaxAngularSpeed
+            ),
+            z: this.clampAbs(
+              av.z * angularDampingFactor,
+              this.landingMaxAngularSpeed
+            ),
           },
           true
         );
@@ -381,6 +418,20 @@ export class StructureMonitor {
 
         const landingElapsedSec = (now - (block.landingStartTime ?? now)) / 1000;
         const isLockDelayActive = landingElapsedSec < landingLockDelay;
+
+        const bodySleeping =
+          typeof block.body.isSleeping === "function" && block.body.isSleeping();
+
+        const almostStopped =
+          linearSpeed <= 0.03 &&
+          angularSpeed <= 0.04 &&
+          yDelta <= 0.01 &&
+          block.landingFrames >= landingMinFrames;
+
+        if (!isLockDelayActive && (bodySleeping || almostStopped)) {
+          this.forceSettle(block);
+          continue;
+        }
 
         if (!isLockDelayActive && block.stableFrames >= landingStableFramesRequired) {
           this.forceSettle(block);
@@ -518,40 +569,59 @@ export class StructureMonitor {
         Math.abs(pos.x) > this.stageSize * 0.5 + this.failOuterMargin ||
         Math.abs(pos.z) > this.stageSize * 0.5 + this.failOuterMargin;
 
-      const hardBelowStage = pos.y < this.failHardBelowY;
-      if (hardBelowStage) {
+      const belowHard = pos.y < this.failHardBelowY;
+      if (belowHard) {
         return true;
       }
 
-      const isMovingEnough =
-        linearSpeed > this.failMovingLinearThreshold ||
-        angularSpeed > this.failMovingAngularThreshold ||
-        lv.y < -0.08;
-
       if (outOfStage) {
-        block.failOutsideFrames = (block.failOutsideFrames ?? 0) + 1;
+        if (
+          linearSpeed > this.failMovingLinearThreshold ||
+          angularSpeed > this.failMovingAngularThreshold ||
+          pos.y < this.failY
+        ) {
+          block.failOutsideFrames = (block.failOutsideFrames ?? 0) + 1;
+        } else {
+          block.failOutsideFrames = 0;
+        }
+
+        if (block.failOutsideFrames >= this.failOutsideFramesRequired) {
+          return true;
+        }
       } else {
         block.failOutsideFrames = 0;
       }
 
-      if (outOfStage && isMovingEnough) {
+      const collapseCandidate =
+        pos.y < this.failY &&
+        (linearSpeed > this.failMovingLinearThreshold ||
+          angularSpeed > this.failMovingAngularThreshold);
+
+      if (collapseCandidate) {
         block.failCollapseFrames = (block.failCollapseFrames ?? 0) + 1;
+        hasActiveCollapseCandidate = true;
+
+        if (block.failCollapseFrames >= this.failCollapseFramesRequired) {
+          return true;
+        }
       } else {
         block.failCollapseFrames = 0;
       }
-
-      const outsideLongEnough =
-        (block.failOutsideFrames ?? 0) >= this.failOutsideFramesRequired;
-
-      const collapsingLongEnough =
-        (block.failCollapseFrames ?? 0) >= this.failCollapseFramesRequired;
-
-      if (outsideLongEnough && collapsingLongEnough) {
-        hasActiveCollapseCandidate = true;
-        break;
-      }
     }
 
-    return hasActiveCollapseCandidate;
+    if (hasActiveCollapseCandidate) {
+      if (this.failCandidateSince == null) {
+        this.failCandidateSince = performance.now();
+      } else {
+        const elapsed = (performance.now() - this.failCandidateSince) / 1000;
+        if (elapsed >= this.failGraceTime) {
+          return true;
+        }
+      }
+    } else {
+      this.failCandidateSince = null;
+    }
+
+    return false;
   }
 }

@@ -486,7 +486,7 @@ export class BlockFactory {
     block.landingFrames = 0;
     block.landingStartY = null;
     block.landingStartTime = null;
-    block.committed = false;
+    block.committed = true;
     block.snapApplied = false;
     block.snapIntent = null;
 
